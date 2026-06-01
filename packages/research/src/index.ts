@@ -1,9 +1,27 @@
 import type { MarketDossier, NormalizedMarket, StageFailure } from '@polyshore/core';
 import { resolutionAmbiguityScore } from '@polyshore/scanner';
+export * from './providers';
 
 export type ResearchStage = (market: NormalizedMarket) => Promise<Partial<MarketDossier>>;
 
+export const REQUIRED_RESEARCH_STAGES = [
+  'resolution_parser',
+  'web_research',
+  'base_rate_calculator',
+  'sentiment_analyzer',
+  'microstructure_analyzer',
+  'catalyst_forecaster',
+  'memory_matcher',
+  'deep_reasoner'
+] as const;
+
+export function assertRequiredStages(stages: Record<string, ResearchStage>): void {
+  const missing = REQUIRED_RESEARCH_STAGES.filter((stage) => !stages[stage]);
+  if (missing.length) throw new Error(`Missing required research stages: ${missing.join(', ')}`);
+}
+
 export async function buildDossier(market: NormalizedMarket, stages: Record<string, ResearchStage>, timeoutMs = 45_000): Promise<MarketDossier> {
+  assertRequiredStages(stages);
   const started = Date.now();
   const partial: Partial<MarketDossier> = {};
   const stagesCompleted: string[] = [];

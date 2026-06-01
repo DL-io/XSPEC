@@ -59,6 +59,15 @@ export const dossiers = mysqlTable('dossiers', {
   freshnessExpiresAt: timestamp('freshness_expires_at').notNull()
 });
 
+export const researchPacks = mysqlTable('research_packs', {
+  id: varchar('id', { length: 128 }).primaryKey(),
+  tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  marketIds: json('market_ids').notNull(),
+  html: text('html').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow()
+});
+
 export const decisionAudits = mysqlTable('decision_audits', {
   id: varchar('id', { length: 128 }).primaryKey(),
   tenantId: varchar('tenant_id', { length: 64 }).notNull(),
@@ -114,6 +123,9 @@ export const calibrationRecords = mysqlTable('calibration_records', {
   predictedProbability: double('predicted_probability').notNull(),
   outcome: int('outcome').notNull(),
   brierScore: double('brier_score').notNull(),
+  directionalAccuracy: boolean('directional_accuracy').notNull(),
+  sharpness: double('sharpness').notNull(),
+  modelRecommendations: json('model_recommendations').notNull(),
   resolvedAt: timestamp('resolved_at').notNull()
 });
 

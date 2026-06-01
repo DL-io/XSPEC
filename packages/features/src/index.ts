@@ -1,4 +1,5 @@
 import type { FeatureSnapshot, NormalizedMarket } from '@polyshore/core';
+export * from './store';
 
 export function computeFeatureSnapshot(market: NormalizedMarket, window: FeatureSnapshot['window']): FeatureSnapshot {
   return {

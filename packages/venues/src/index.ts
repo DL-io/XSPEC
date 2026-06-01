@@ -12,10 +12,6 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
 }
 
-function emptyPortfolio(tenantId: string): PortfolioState {
-  return { tenantId, cash: 0, equity: 0, totalExposure: 0, categoryExposure: {}, positions: [], openOrderCount: 0, dailyPnl: 0, maxDrawdown: 0, severeMismatchOpen: false };
-}
-
 export class PolymarketConnector implements VenueConnector {
   id = 'polymarket' as const;
   constructor(private readonly gammaUrl: string, private readonly clobUrl: string, private readonly tenantId: string) {}
@@ -77,9 +73,9 @@ export class PolymarketConnector implements VenueConnector {
     throw new Error('Polymarket live order signing is not configured. Enable a signing adapter before live mode.');
   }
   async cancelOrder(_orderId: string): Promise<VenueCancelResult> { throw new Error('Polymarket cancel requires live order credentials.'); }
-  async fetchPositions(): Promise<Position[]> { return []; }
-  async fetchPortfolio(): Promise<PortfolioState> { return emptyPortfolio(this.tenantId); }
-  async fetchOrder(_orderId: string): Promise<VenueOrderResult | null> { return null; }
+  async fetchPositions(): Promise<Position[]> { throw new Error('Polymarket authenticated position retrieval is not configured.'); }
+  async fetchPortfolio(): Promise<PortfolioState> { throw new Error(`Polymarket portfolio retrieval is not configured for tenant ${this.tenantId}.`); }
+  async fetchOrder(_orderId: string): Promise<VenueOrderResult | null> { throw new Error('Polymarket authenticated order retrieval is not configured.'); }
 }
 
 export class KalshiConnector implements VenueConnector {
@@ -151,6 +147,28 @@ export class KalshiConnector implements VenueConnector {
     return getJson<VenueCancelResult>(`${this.apiUrl}/portfolio/orders/${encodeURIComponent(orderId)}`, { method: 'DELETE', headers: this.authHeaders() });
   }
   async fetchPositions(): Promise<Position[]> { return getJson<Position[]>(`${this.apiUrl}/portfolio/positions`, { headers: this.authHeaders() }); }
-  async fetchPortfolio(): Promise<PortfolioState> { return emptyPortfolio(this.tenantId); }
+  async fetchPortfolio(): Promise<PortfolioState> {
+    const balance = await getJson<{ balance?: number; portfolio_value?: number; cash?: number }>(`${this.apiUrl}/portfolio/balance`, { headers: this.authHeaders() });
+    const positions = await this.fetchPositions();
+    const cash = Number(balance.cash ?? balance.balance ?? 0) / (Number(balance.cash ?? balance.balance ?? 0) > 1_000 ? 100 : 1);
+    const equity = Number(balance.portfolio_value ?? cash);
+    const categoryExposure = positions.reduce<Record<string, number>>((acc, position) => {
+      acc[position.category] = (acc[position.category] ?? 0) + position.marketValue;
+      return acc;
+    }, {});
+    return {
+      tenantId: this.tenantId,
+      cash,
+      equity,
+      totalExposure: positions.reduce((sum, position) => sum + position.marketValue, 0),
+      categoryExposure,
+      positions,
+      openOrderCount: 0,
+      dailyPnl: 0,
+      maxDrawdown: 0,
+      severeMismatchOpen: false,
+      reconciledAt: new Date()
+    };
+  }
   async fetchOrder(orderId: string): Promise<VenueOrderResult | null> { return getJson<VenueOrderResult | null>(`${this.apiUrl}/portfolio/orders/${encodeURIComponent(orderId)}`, { headers: this.authHeaders() }); }
 }

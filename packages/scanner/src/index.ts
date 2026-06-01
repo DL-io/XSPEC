@@ -1,4 +1,4 @@
-import type { NormalizedMarket } from '@polyshore/core';
+import type { NormalizedMarket, OrderbookSnapshot } from '@polyshore/core';
 
 export interface ScannerDecision { accepted: boolean; hardRejectReasons: string[]; softWarnings: string[]; }
 
@@ -29,4 +29,35 @@ export function evaluateScannerGates(market: NormalizedMarket, now = new Date(),
   if (hoursToResolution < 24) softWarnings.push('resolutionDate < now + 24 hours');
   if (market.bidDepth1Pct < 100) softWarnings.push('bidDepth1Pct < 100 USD');
   return { accepted: hardRejectReasons.length === 0, hardRejectReasons, softWarnings };
+}
+
+export function applyOrderbookSnapshot(market: NormalizedMarket, book: OrderbookSnapshot): NormalizedMarket {
+  const bestBid = book.bids[0]?.price ?? market.bestBid;
+  const bestAsk = book.asks[0]?.price ?? market.bestAsk;
+  const midpoint = bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : market.midpoint;
+  const bidDepth1Pct = depthWithin(book.bids, midpoint, 0.01, 'bid');
+  const askDepth1Pct = depthWithin(book.asks, midpoint, 0.01, 'ask');
+  const bidDepth5Pct = depthWithin(book.bids, midpoint, 0.05, 'bid');
+  const askDepth5Pct = depthWithin(book.asks, midpoint, 0.05, 'ask');
+  return {
+    ...market,
+    bestBid,
+    bestAsk,
+    midpoint,
+    spread: Math.max(0, bestAsk - bestBid),
+    spreadBps: midpoint > 0 ? ((bestAsk - bestBid) / midpoint) * 10_000 : 0,
+    bidDepth1Pct,
+    askDepth1Pct,
+    bidDepth5Pct,
+    askDepth5Pct,
+    dataFreshnessMs: Date.now() - book.capturedAt.getTime(),
+    scannedAt: new Date()
+  };
+}
+
+function depthWithin(levels: { price: number; size: number }[], midpoint: number, pct: number, side: 'bid' | 'ask'): number {
+  if (midpoint <= 0) return 0;
+  return levels
+    .filter((level) => side === 'bid' ? level.price >= midpoint * (1 - pct) : level.price <= midpoint * (1 + pct))
+    .reduce((sum, level) => sum + level.price * level.size, 0);
 }

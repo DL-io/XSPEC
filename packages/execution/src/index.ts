@@ -2,6 +2,11 @@ import type { NewOrder, OrderLifecycleState, OrderStateTransition, OrderbookSnap
 
 export interface PaperExecutionConfig { latencyMs: number; maxDepthParticipation: number; rejectionThreshold: number; }
 export interface ExecutionResult { result: VenueOrderResult; transitions: OrderStateTransition[]; realizedCost: number; }
+export interface LiveOrderStore {
+  createIntent(order: NewOrder): Promise<string>;
+  recordTransition(orderId: string, to: OrderLifecycleState, reason: string, venueOrderId?: string): Promise<void>;
+  persistVenueOrderId(orderId: string, venueOrderId: string): Promise<void>;
+}
 
 export async function executePaperOrder(order: NewOrder, book: OrderbookSnapshot, config: PaperExecutionConfig): Promise<ExecutionResult> {
   await new Promise((resolve) => setTimeout(resolve, config.latencyMs));
@@ -32,6 +37,27 @@ export async function executePaperOrder(order: NewOrder, book: OrderbookSnapshot
 export async function executeLiveLimitOrder(connector: VenueConnector, order: NewOrder): Promise<VenueOrderResult> {
   if (order.limitPrice <= 0 || order.limitPrice >= 1) throw new Error('live execution requires a bounded limit price');
   return connector.placeOrder(order);
+}
+
+export async function submitLiveLimitOrder(connector: VenueConnector, order: NewOrder, store: LiveOrderStore): Promise<VenueOrderResult> {
+  if (order.limitPrice <= 0 || order.limitPrice >= 1) throw new Error('live execution requires limit orders only with bounded prices');
+  const orderId = await store.createIntent(order);
+  await store.recordTransition(orderId, 'ORDER_VALIDATED', 'limit order validated');
+  await store.recordTransition(orderId, 'ORDER_SIGNED', 'order delegated to venue signing adapter');
+  await store.recordTransition(orderId, 'ORDER_POSTED', 'order posted to venue');
+  const result = await connector.placeOrder(order);
+  if (!result.venueOrderId) throw new Error('venue accepted response did not include exchange order ID');
+  await store.persistVenueOrderId(orderId, result.venueOrderId);
+  await store.recordTransition(orderId, result.state === 'REJECTED' ? 'REJECTED' : 'ACCEPTED_BY_VENUE', 'venue response persisted before accepted state', result.venueOrderId);
+  return result;
+}
+
+export async function cancelWithReconciliationEscalation(connector: VenueConnector, orderId: string): Promise<'CANCEL_CONFIRMED' | 'RECONCILIATION_MISMATCH'> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await connector.cancelOrder(orderId);
+    if (result.confirmed) return 'CANCEL_CONFIRMED';
+  }
+  return 'RECONCILIATION_MISMATCH';
 }
 
 function rejected(order: NewOrder, reason: string): ExecutionResult {
