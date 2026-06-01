@@ -1,0 +1,1 @@
+{"name":"@polyshore/terminal","version":"2.0.0","private":true,"type":"module","scripts":{"dev":"next dev","build":"next build","start":"next start","typecheck":"tsc --noEmit"},"dependencies":{"@polyshore/api":"workspace:*","@polyshore/config":"workspace:*","@polyshore/auth":"workspace:*","@polyshore/observability":"workspace:*"}}

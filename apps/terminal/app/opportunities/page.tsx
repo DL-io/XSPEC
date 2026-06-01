@@ -1,0 +1,1 @@
+export default function Opportunities() { return <div className="panel"><h2>Opportunity Feed</h2><p>No local market cache is connected in this view until scanner persistence is configured.</p></div>; }

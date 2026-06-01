@@ -1,0 +1,1 @@
+export default function Health() { return <div className="panel"><h2>System Health</h2><p>Worker health, external dependency status, and reconciliation freshness appear here when telemetry storage is attached.</p></div>; }
