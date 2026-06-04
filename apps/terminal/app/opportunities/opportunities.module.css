@@ -1,0 +1,233 @@
+.container {
+  max-width: 1200px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  border-bottom: 1px solid #d8d8d0;
+  padding-bottom: 16px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 24px;
+  color: #151515;
+}
+
+.backLink {
+  color: #666;
+  text-decoration: none;
+  font-size: 13px;
+  padding: 6px 12px;
+  border: 1px solid #d8d8d0;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.backLink:hover {
+  background: #f5f5f3;
+  border-color: #999;
+}
+
+.controls {
+  margin-bottom: 24px;
+}
+
+.sortButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.sortButtons button {
+  padding: 8px 16px;
+  border: 1px solid #d8d8d0;
+  background: #fff;
+  color: #666;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sortButtons button:hover {
+  border-color: #999;
+}
+
+.sortButtons button.active {
+  background: #151515;
+  color: #fff;
+  border-color: #151515;
+}
+
+.signalsList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.signalCard {
+  border: 1px solid #d8d8d0;
+  border-radius: 6px;
+  padding: 20px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: all 0.2s;
+}
+
+.signalCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #999;
+}
+
+.signalCard.pending {
+  border-left: 3px solid #ff9800;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.marketId code {
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  color: #666;
+  word-break: break-all;
+}
+
+.cardStatus {
+  display: flex;
+  gap: 8px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.badge.approved {
+  background: rgba(76, 175, 80, 0.1);
+  color: #388e3c;
+}
+
+.badge.pending {
+  background: rgba(255, 152, 0, 0.1);
+  color: #f57c00;
+}
+
+.cardMetrics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metricLabel {
+  font-size: 11px;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 500;
+}
+
+.metricValue {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.percentage {
+  font-size: 16px;
+  font-weight: 600;
+  color: #151515;
+  min-width: 50px;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.metricBar {
+  flex: 1;
+  height: 6px;
+  background: #e8e8e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.metricFill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff6b35 0%, #ff8a50 100%);
+  transition: width 0.3s ease;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #e8e8e0;
+}
+
+.timestamp {
+  font-size: 11px;
+  color: #999;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.viewLink {
+  font-size: 12px;
+  color: #151515;
+  text-decoration: none;
+  padding: 4px 8px;
+  border: 1px solid #d8d8d0;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+
+.viewLink:hover {
+  background: #f5f5f3;
+  border-color: #999;
+}
+
+.emptyState {
+  border: 1px solid #d8d8d0;
+  border-radius: 6px;
+  padding: 60px 20px;
+  background: #fff;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+
+.loading,
+.error {
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.error {
+  color: #f44336;
+}
+
+@media (max-width: 900px) {
+  .signalsList {
+    grid-template-columns: 1fr;
+  }
+}
