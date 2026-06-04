@@ -32,3 +32,5 @@ In local paths containing `:`, pnpm script PATH injection may fail. Running loca
 ## Configuration
 
 Copy `.env.example` into the deployment environment and provide real MySQL/TiDB, Redis, credential, provider, and alert-channel values. Live mode remains blocked until operator confirmation, credentials, reconciliation, kill-switch, and risk gates allow it.
+
+# XSPEC

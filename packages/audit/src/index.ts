@@ -5,8 +5,13 @@ export interface AuditWriter { appendDecision(record: DecisionAudit): Promise<vo
 export function assertCompleteDecisionAudit(record: DecisionAudit): void {
   const missing = [
     !record.scannerData && 'scannerData',
+    !record.featureSnapshot && 'featureSnapshot',
+    !record.dossierId && 'dossierId',
     !record.modelEstimates && 'modelEstimates',
-    !record.finalOutcome && 'finalOutcome'
+    !record.ensembleOutput && 'ensembleOutput',
+    !record.riskDecision && 'riskDecision',
+    !record.finalOutcome && 'finalOutcome',
+    record.finalOutcome === 'trade' && !record.tradeProposal && 'tradeProposal'
   ].filter(Boolean);
   if (missing.length) throw new Error(`Incomplete decision audit: ${missing.join(', ')}`);
 }

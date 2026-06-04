@@ -6,3 +6,11 @@ coverage/
 .env.*
 !.env.example
 *.log
+*.tsbuildinfo
+
+# This repository is TypeScript-first. Emitted JavaScript beside source files is
+# generated output and must not participate in module resolution.
+*.js
+*.jsx
+!*.config.cjs
+!ecosystem.config.cjs

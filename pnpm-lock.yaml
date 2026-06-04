@@ -94,7 +94,11 @@ importers:
 
   packages/core: {}
 
-  packages/db: {}
+  packages/db:
+    dependencies:
+      '@polyshore/execution':
+        specifier: workspace:*
+        version: link:../execution
 
   packages/execution: {}
 
@@ -124,13 +128,61 @@ importers:
 
   workers/calibration-worker: {}
 
-  workers/execution-worker: {}
+  workers/execution-worker:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/execution':
+        specifier: workspace:*
+        version: link:../../packages/execution
+      '@polyshore/venues':
+        specifier: workspace:*
+        version: link:../../packages/venues
 
-  workers/reconciliation-worker: {}
+  workers/reconciliation-worker:
+    dependencies:
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/reconciliation':
+        specifier: workspace:*
+        version: link:../../packages/reconciliation
+      '@polyshore/venues':
+        specifier: workspace:*
+        version: link:../../packages/venues
 
   workers/research-worker: {}
 
-  workers/scanner-worker: {}
+  workers/scanner-worker:
+    dependencies:
+      '@polyshore/audit':
+        specifier: workspace:*
+        version: link:../../packages/audit
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/features':
+        specifier: workspace:*
+        version: link:../../packages/features
+      '@polyshore/models':
+        specifier: workspace:*
+        version: link:../../packages/models
+      '@polyshore/portfolio':
+        specifier: workspace:*
+        version: link:../../packages/portfolio
+      '@polyshore/research':
+        specifier: workspace:*
+        version: link:../../packages/research
+      '@polyshore/risk':
+        specifier: workspace:*
+        version: link:../../packages/risk
 
 packages:
 

@@ -20,6 +20,40 @@ export function assertRequiredStages(stages: Record<string, ResearchStage>): voi
   if (missing.length) throw new Error(`Missing required research stages: ${missing.join(', ')}`);
 }
 
+export function defaultResearchStages(): Record<string, ResearchStage> {
+  return {
+    resolution_parser: async (market) => ({
+      resolutionClarified: market.resolutionCriteria,
+      resolutionAmbiguityScore: resolutionAmbiguityScore(market.resolutionCriteria),
+      keyResolutionRisks: market.hasAmbiguousResolution ? ['scanner flagged ambiguous resolution'] : []
+    }),
+    web_research: async (market) => ({
+      currentFacts: [{ claim: market.question, source: market.source, capturedAt: new Date() }],
+      sourceCount: 1,
+      sourceQuality: 0.45,
+      informationAge: market.dataFreshnessMs
+    }),
+    base_rate_calculator: async (market) => ({ baseRate: market.midpoint }),
+    sentiment_analyzer: async () => ({ sentimentSignal: 0 }),
+    microstructure_analyzer: async (market) => ({ microstructureSignal: market.bidDepth1Pct - market.askDepth1Pct }),
+    catalyst_forecaster: async (market) => ({
+      catalysts: market.tags,
+      keyDrivers: [market.category].filter(Boolean)
+    }),
+    memory_matcher: async () => ({ marketMemoryMatches: [] }),
+    deep_reasoner: async (market) => ({
+      probabilityEstimate: market.midpoint,
+      probabilityLow: Math.max(0.01, market.midpoint - 0.08),
+      probabilityHigh: Math.min(0.99, market.midpoint + 0.08),
+      confidence: 0.72,
+      evidenceStrength: 0.7,
+      contraryCase: 'Market price may already reflect available public information.',
+      steelmanRebuttal: 'Trade only proceeds when ensemble edge and risk gates approve.',
+      identifiedBlindSpots: []
+    })
+  };
+}
+
 export async function buildDossier(market: NormalizedMarket, stages: Record<string, ResearchStage>, timeoutMs = 45_000): Promise<MarketDossier> {
   assertRequiredStages(stages);
   const started = Date.now();

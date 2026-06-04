@@ -1,6 +1,31 @@
-import type { EnsembleResult, ModelEstimate } from '@polyshore/core';
+import type { FeatureSnapshot, MarketDossier, ModelEstimate, NormalizedMarket, EnsembleResult } from '@polyshore/core';
 
 export const LAUNCH_MODELS = ['base_rate', 'llm_research', 'sentiment', 'microstructure', 'historical_analog', 'deep_reasoner', 'relative_value', 'basket_tilt', 'quant_model'] as const;
+
+export function generateModelEstimates(input: { market: NormalizedMarket; dossier: MarketDossier; featureSnapshot: FeatureSnapshot }): ModelEstimate[] {
+  const { market, dossier, featureSnapshot } = input;
+  return [
+    estimate('base_rate', dossier.baseRate || market.midpoint, 0.75, ['dossier base rate'], dossier),
+    estimate('llm_research', dossier.probabilityEstimate, dossier.confidence, ['research dossier probability'], dossier),
+    estimate('sentiment', market.midpoint + dossier.sentimentSignal * 0.05, 0.7, ['sentiment signal'], dossier),
+    estimate('microstructure', market.midpoint + featureSnapshot.orderFlowImbalance * 0.04 - market.spread * 0.25, 0.75, ['order flow and spread'], dossier),
+    estimate('historical_analog', dossier.marketMemoryMatches[0]?.outcome ?? (dossier.baseRate || market.midpoint), 0.7, ['market memory'], dossier),
+    estimate('deep_reasoner', (dossier.probabilityLow + dossier.probabilityHigh + dossier.probabilityEstimate) / 3, dossier.evidenceStrength, ['reasoned probability band'], dossier),
+    estimate('relative_value', market.midpoint + featureSnapshot.crossMarketCorrelationScore * 0.03, 0.7, ['cross-market feature'], dossier),
+    estimate('basket_tilt', market.midpoint + featureSnapshot.momentum * 0.2, 0.7, ['price momentum'], dossier),
+    estimate('quant_model', market.midpoint + featureSnapshot.volumeBurstScore * 0.005 - featureSnapshot.volatility * 0.02, 0.7, ['feature snapshot'], dossier)
+  ];
+}
+
+function estimate(modelId: string, probability: number, confidenceWeight: number, evidence: string[], dossier: MarketDossier): ModelEstimate {
+  return {
+    modelId,
+    probability: clamp(probability, 0.01, 0.99),
+    confidenceWeight: clamp(confidenceWeight, 0, 1),
+    evidence,
+    freshnessScore: Date.now() <= dossier.freshnessExpiresAt.getTime() ? 1 : 0.35
+  };
+}
 
 export function buildEnsemble(estimates: ModelEstimate[], calibrationAdjustment = 0): EnsembleResult {
   const successful = estimates.filter((estimate) => !estimate.failureReason && Number.isFinite(estimate.probability));

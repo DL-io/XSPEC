@@ -1,5 +1,5 @@
 import type { EnsembleResult, NormalizedMarket, PortfolioState, Side, TradeProposal } from '@polyshore/core';
-import { MANDATES } from '@polyshore/risk';
+import { MANDATES } from '../../risk/src/index.ts';
 
 export function calculateEdge(market: NormalizedMarket, ensemble: EnsembleResult) {
   const yesEdge = ensemble.ensembleProbability - market.bestAsk;

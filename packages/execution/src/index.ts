@@ -1,9 +1,9 @@
-import type { NewOrder, OrderLifecycleState, OrderStateTransition, OrderbookSnapshot, VenueConnector, VenueOrderResult } from '@polyshore/core';
+import type { ExecutionAuditStatus, NewOrder, OrderLifecycleState, OrderStateTransition, OrderbookSnapshot, VenueConnector, VenueOrderResult } from '@polyshore/core';
 
 export interface PaperExecutionConfig { latencyMs: number; maxDepthParticipation: number; rejectionThreshold: number; }
 export interface ExecutionResult { result: VenueOrderResult; transitions: OrderStateTransition[]; realizedCost: number; }
 export interface LiveOrderStore {
-  createIntent(order: NewOrder): Promise<string>;
+  createIntent(order: NewOrder, idempotencyKey?: string): Promise<string>;
   recordTransition(orderId: string, to: OrderLifecycleState, reason: string, venueOrderId?: string): Promise<void>;
   persistVenueOrderId(orderId: string, venueOrderId: string): Promise<void>;
 }
@@ -37,6 +37,15 @@ export async function executePaperOrder(order: NewOrder, book: OrderbookSnapshot
 export async function executeLiveLimitOrder(connector: VenueConnector, order: NewOrder): Promise<VenueOrderResult> {
   if (order.limitPrice <= 0 || order.limitPrice >= 1) throw new Error('live execution requires a bounded limit price');
   return connector.placeOrder(order);
+}
+
+export function classifyVenueExecutionError(error: unknown): ExecutionAuditStatus {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/polymarket live order signing is not configured|authenticated execution is unsupported/i.test(message)) return 'unsupported';
+  if (/credentials are required|requires live order credentials|not configured for tenant|bounded limit price|limit orders only/i.test(message)) return 'failed';
+  if (/HTTP (408|409|425|429|5\d\d)\b|abort|timeout|timed out|ECONNRESET|ECONNREFUSED|EPIPE|network/i.test(message)) return 'retryable';
+  if (/HTTP 4\d\d\b|rejected|invalid|insufficient/i.test(message)) return 'rejected';
+  return 'failed';
 }
 
 export async function submitLiveLimitOrder(connector: VenueConnector, order: NewOrder, store: LiveOrderStore): Promise<VenueOrderResult> {

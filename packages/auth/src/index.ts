@@ -16,3 +16,9 @@ export function can(role: Role, permission: string): boolean {
 export function requirePermission(role: Role, permission: string): void {
   if (!can(role, permission)) throw new Error(`Role ${role} lacks permission ${permission}`);
 }
+
+export function roleFromHeader(value: string | null): Role {
+  const role = value as Role | null;
+  if (role && ROLE_PERMISSIONS[role]) return role;
+  return 'viewer';
+}
