@@ -9,6 +9,7 @@ interface OverviewData {
   safety: any;
   reconciliation: any;
   portfolio: any;
+  portfolioHistory: Array<{ equity: number; capturedAt: string }>;
   audits: any[];
   orders: any[];
   workers: any[];
@@ -25,12 +26,11 @@ interface Signal {
   createdAt: Date;
 }
 
-const tenantId = 'demo-tenant'; // In production, get from auth context
+const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
 
 export default function MissionControl() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
-  const [equityHistory, setEquityHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,18 +52,6 @@ export default function MissionControl() {
 
         setOverview(overviewData);
         setSignals(signalsData.signals || []);
-
-        // Generate equity history from portfolio snapshots
-        if (overviewData.portfolio) {
-          const historyPoints = [
-            { time: '09:00', equity: overviewData.portfolio.equity * 0.92 },
-            { time: '10:30', equity: overviewData.portfolio.equity * 0.97 },
-            { time: '12:00', equity: overviewData.portfolio.equity * 0.99 },
-            { time: '14:00', equity: overviewData.portfolio.equity * 1.01 },
-            { time: 'Now', equity: overviewData.portfolio.equity }
-          ];
-          setEquityHistory(historyPoints);
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
@@ -81,6 +69,10 @@ export default function MissionControl() {
   if (!overview) return <div className={styles.empty}>No data available</div>;
 
   const portfolio = overview.portfolio || { equity: 0, cash: 0, totalExposure: 0, dailyPnl: 0, maxDrawdown: 0, openOrderCount: 0, positions: [] };
+  const equityHistory = (overview.portfolioHistory || []).map((snapshot) => ({
+    time: new Date(snapshot.capturedAt).toLocaleTimeString(),
+    equity: snapshot.equity
+  }));
   const safety = overview.safety || { killSwitchActive: true, liveAuthorized: false };
   const reconciliation = overview.reconciliation || { severeMismatchOpen: false };
 
@@ -114,14 +106,14 @@ export default function MissionControl() {
         </div>
 
         <div className={styles.commandSection}>
-          <div className={`${styles.status} ${styles[`status-${systemStatus.toLowerCase()}}`]}`}>
+          <div className={`${styles.status} ${styles[`status-${systemStatus.toLowerCase()}`]}`}>
             {systemStatus}
           </div>
           <div className={styles.mode}>
             {tradingMode}
           </div>
           <div className={`${styles.killSwitch} ${safety.killSwitchActive ? styles.active : ''}`}>
-            {safety.killSwitchActive ? 'ARMED' : 'ACTIVE'}
+            {safety.killSwitchActive ? 'ENGAGED' : 'CLEAR'}
           </div>
         </div>
       </div>
@@ -132,22 +124,19 @@ export default function MissionControl() {
         <div className={`${styles.panel} ${styles.equityCurve}`}>
           <h2>Equity Curve</h2>
           <div className={styles.chartContainer}>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={equityHistory}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="time" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="equity" stroke="#ff6b35" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div className={styles.timeframes}>
-            <button className={styles.active}>Today</button>
-            <button>7D</button>
-            <button>30D</button>
-            <button>90D</button>
-            <button>All</button>
+            {equityHistory.length > 0 ? (
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={equityHistory}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="equity" stroke="#ff6b35" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className={styles.empty}>No portfolio snapshots available</div>
+            )}
           </div>
         </div>
 
@@ -257,22 +246,12 @@ export default function MissionControl() {
         <div className={`${styles.panel} ${styles.riskSummary}`}>
           <h2>Risk Fortress</h2>
           <div className={styles.gatesList}>
-            <div className={styles.gate}>
-              <span className={styles.gateStatus}>✓</span>
-              <span>Liquidity Gate</span>
-            </div>
-            <div className={styles.gate}>
-              <span className={styles.gateStatus}>✓</span>
-              <span>Confidence Gate</span>
-            </div>
-            <div className={styles.gate}>
-              <span className={styles.gateStatus}>✓</span>
-              <span>Exposure Gate</span>
-            </div>
-            <div className={styles.gate}>
-              <span className={styles.gateStatus}>✓</span>
-              <span>Drawdown Gate</span>
-            </div>
+            {!reconciliation.severeMismatchOpen && !safety.killSwitchActive && (
+              <div className={styles.gate}>
+                <span className={styles.gateStatus}>✓</span>
+                <span>Safety Gates Clear</span>
+              </div>
+            )}
             {reconciliation.severeMismatchOpen && (
               <div className={`${styles.gate} ${styles.failed}`}>
                 <span className={styles.gateStatus}>✗</span>

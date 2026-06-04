@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import styles from './portfolio.module.css';
 
-const tenantId = 'demo-tenant';
+const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
 
 interface Position {
   id: string;

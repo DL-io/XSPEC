@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import styles from './reconciliation.module.css';
 
-const tenantId = 'demo-tenant';
+const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
 
 export default function ReconciliationCenter() {
   const [state, setState] = useState<any>(null);
@@ -34,7 +34,7 @@ export default function ReconciliationCenter() {
       setAcknowledging(true);
       const res = await fetch('/api/reconciliation', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'x-polyshore-role': 'operator' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId,
           action: 'acknowledge',
@@ -56,7 +56,7 @@ export default function ReconciliationCenter() {
       setAcknowledging(true);
       const res = await fetch('/api/reconciliation', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'x-polyshore-role': 'operator' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId,
           action: 'clear',

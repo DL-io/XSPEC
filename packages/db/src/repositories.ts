@@ -601,6 +601,13 @@ export class PortfolioRepository {
     return rows[0]?.payload as PortfolioState | undefined ?? null;
   }
 
+  async history(tenantId: string, limit = 50): Promise<Array<PortfolioState & { capturedAt: Date }>> {
+    const rows = await this.db.select().from(portfolioSnapshots).where(eq(portfolioSnapshots.tenantId, tenantId)).orderBy(desc(portfolioSnapshots.capturedAt)).limit(limit);
+    return rows
+      .map((row) => ({ ...(row.payload as PortfolioState), capturedAt: row.capturedAt }))
+      .reverse();
+  }
+
   async put(snapshot: PortfolioState): Promise<void> {
     await this.db.insert(portfolioSnapshots).values({
       id: crypto.randomUUID(),

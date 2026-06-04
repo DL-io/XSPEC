@@ -15,7 +15,7 @@ interface Signal {
   createdAt: string;
 }
 
-const tenantId = 'demo-tenant';
+const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
 
 export default function OpportunitiesPage() {
   const [signals, setSignals] = useState<Signal[]>([]);

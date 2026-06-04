@@ -24,7 +24,7 @@ export async function PATCH(request: Request) {
         tenantId: parsed.data.tenantId,
         active: parsed.data.killSwitch.active,
         reason: parsed.data.killSwitch.reason,
-        actorId: parsed.data.actorId ?? actor.actorId
+        actorId: actor.actorId
       });
     }
     if (parsed.data.liveAuthorization) {
@@ -32,7 +32,7 @@ export async function PATCH(request: Request) {
         tenantId: parsed.data.tenantId,
         enabled: parsed.data.liveAuthorization.enabled,
         reason: parsed.data.liveAuthorization.reason,
-        actorId: parsed.data.actorId ?? actor.actorId
+        actorId: actor.actorId
       });
     }
     return Response.json({ state });

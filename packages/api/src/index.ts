@@ -8,7 +8,7 @@ export const SafetyQuerySchema = z.object({ tenantId: z.string().min(1) });
 export const ReconciliationQuerySchema = z.object({ tenantId: z.string().min(1) });
 export const ReconciliationUpdateSchema = z.object({
   tenantId: z.string().min(1),
-  actorId: z.string().min(1),
+  actorId: z.string().min(1).optional(),
   action: z.enum(['acknowledge', 'clear']),
   reason: z.string().min(1)
 });

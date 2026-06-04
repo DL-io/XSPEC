@@ -29,6 +29,9 @@ export async function requireApiAccess(request: Request, input: { tenantId: stri
     return { actorId: apiClient.apiClientId, role: 'api_only' as const };
   }
   const role = roleFromHeader(request.headers.get('x-polyshore-role'));
+  if (process.env.NODE_ENV === 'production' && process.env.TRUST_OPERATOR_ROLE_HEADERS !== 'true') {
+    throw new ApiAuthError('API key required for operator mutation', 401);
+  }
   if (!can(role, input.permission)) throw new ApiAuthError(`role ${role} lacks ${input.permission}`, 403);
   return { actorId: request.headers.get('x-operator-id') ?? role, role };
 }

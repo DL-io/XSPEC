@@ -22,8 +22,8 @@ export async function PATCH(request: Request) {
     const incidents = new ReconciliationIncidentRepository(db);
     const portfolio = new PortfolioRepository(db);
     const state = parsed.data.action === 'acknowledge'
-      ? await incidents.acknowledge({ tenantId: parsed.data.tenantId, actorId: parsed.data.actorId ?? actor.actorId, reason: parsed.data.reason })
-      : await incidents.clear(parsed.data.tenantId, parsed.data.reason, parsed.data.actorId ?? actor.actorId);
+      ? await incidents.acknowledge({ tenantId: parsed.data.tenantId, actorId: actor.actorId, reason: parsed.data.reason })
+      : await incidents.clear(parsed.data.tenantId, parsed.data.reason, actor.actorId);
     await portfolio.markSevereMismatch(parsed.data.tenantId, state.severeMismatchOpen);
     return Response.json({ state });
   } catch (error) {
