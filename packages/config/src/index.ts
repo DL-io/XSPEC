@@ -1,3 +1,4 @@
+import { createPrivateKey } from 'node:crypto';
 import { z } from 'zod';
 
 export const ConfigSchema = z.object({
@@ -23,6 +24,21 @@ export const ConfigSchema = z.object({
   ALERT_WEBHOOK_URL: z.string().url().optional(),
   SMTP_URL: z.string().optional(),
   SMS_WEBHOOK_URL: z.string().url().optional()
+}).superRefine((value, ctx) => {
+  if ((value.KALSHI_KEY_ID && !value.KALSHI_PRIVATE_KEY) || (!value.KALSHI_KEY_ID && value.KALSHI_PRIVATE_KEY)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['KALSHI_KEY_ID'],
+      message: 'Kalshi credentials require both KALSHI_KEY_ID and KALSHI_PRIVATE_KEY'
+    });
+  }
+  if (value.KALSHI_PRIVATE_KEY && !isValidPrivateKey(value.KALSHI_PRIVATE_KEY)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['KALSHI_PRIVATE_KEY'],
+      message: 'KALSHI_PRIVATE_KEY must be a valid PEM private key'
+    });
+  }
 });
 
 export type RuntimeConfig = z.infer<typeof ConfigSchema>;
@@ -36,6 +52,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
     throw new Error('Live mode requires exchange credentials and explicit operator activation workflow.');
   }
   return parsed.data;
+}
+
+function isValidPrivateKey(value: string): boolean {
+  try {
+    createPrivateKey(value.replace(/\\n/g, '\n'));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface AuditedConfigChange {

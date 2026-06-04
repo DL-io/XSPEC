@@ -1,3 +1,4 @@
+import { constants, createPrivateKey, sign } from 'node:crypto';
 import type { NewOrder, NormalizedMarket, OrderbookSnapshot, PortfolioState, Position, VenueCancelResult, VenueConnector, VenueOrderResult } from '@polyshore/core';
 
 async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -82,9 +83,16 @@ export class KalshiConnector implements VenueConnector {
   id = 'kalshi' as const;
   constructor(private readonly apiUrl: string, private readonly keyId: string | undefined, private readonly privateKey: string | undefined, private readonly tenantId: string) {}
 
-  private authHeaders(): HeadersInit {
+  private authHeaders(method: string, url: string): HeadersInit {
     if (!this.keyId || !this.privateKey) throw new Error('Kalshi credentials are required for authenticated operations.');
-    return { 'KALSHI-ACCESS-KEY': this.keyId };
+    const timestamp = String(Date.now());
+    const path = new URL(url).pathname;
+    const signature = signKalshiRequest(this.privateKey, timestamp, method, path);
+    return {
+      'KALSHI-ACCESS-KEY': this.keyId,
+      'KALSHI-ACCESS-TIMESTAMP': timestamp,
+      'KALSHI-ACCESS-SIGNATURE': signature
+    };
   }
 
   async fetchMarkets(): Promise<NormalizedMarket[]> {
@@ -141,14 +149,20 @@ export class KalshiConnector implements VenueConnector {
   }
 
   async placeOrder(order: NewOrder): Promise<VenueOrderResult> {
-    return getJson<VenueOrderResult>(`${this.apiUrl}/portfolio/orders`, { method: 'POST', headers: { 'content-type': 'application/json', ...this.authHeaders() }, body: JSON.stringify(order) });
+    const url = `${this.apiUrl}/portfolio/orders`;
+    return getJson<VenueOrderResult>(url, { method: 'POST', headers: { 'content-type': 'application/json', ...this.authHeaders('POST', url) }, body: JSON.stringify(order) });
   }
   async cancelOrder(orderId: string): Promise<VenueCancelResult> {
-    return getJson<VenueCancelResult>(`${this.apiUrl}/portfolio/orders/${encodeURIComponent(orderId)}`, { method: 'DELETE', headers: this.authHeaders() });
+    const url = `${this.apiUrl}/portfolio/orders/${encodeURIComponent(orderId)}`;
+    return getJson<VenueCancelResult>(url, { method: 'DELETE', headers: this.authHeaders('DELETE', url) });
   }
-  async fetchPositions(): Promise<Position[]> { return getJson<Position[]>(`${this.apiUrl}/portfolio/positions`, { headers: this.authHeaders() }); }
+  async fetchPositions(): Promise<Position[]> {
+    const url = `${this.apiUrl}/portfolio/positions`;
+    return getJson<Position[]>(url, { headers: this.authHeaders('GET', url) });
+  }
   async fetchPortfolio(): Promise<PortfolioState> {
-    const balance = await getJson<{ balance?: number; portfolio_value?: number; cash?: number }>(`${this.apiUrl}/portfolio/balance`, { headers: this.authHeaders() });
+    const balanceUrl = `${this.apiUrl}/portfolio/balance`;
+    const balance = await getJson<{ balance?: number; portfolio_value?: number; cash?: number }>(balanceUrl, { headers: this.authHeaders('GET', balanceUrl) });
     const positions = await this.fetchPositions();
     const cash = Number(balance.cash ?? balance.balance ?? 0) / (Number(balance.cash ?? balance.balance ?? 0) > 1_000 ? 100 : 1);
     const equity = Number(balance.portfolio_value ?? cash);
@@ -170,5 +184,22 @@ export class KalshiConnector implements VenueConnector {
       reconciledAt: new Date()
     };
   }
-  async fetchOrder(orderId: string): Promise<VenueOrderResult | null> { return getJson<VenueOrderResult | null>(`${this.apiUrl}/portfolio/orders/${encodeURIComponent(orderId)}`, { headers: this.authHeaders() }); }
+  async fetchOrder(orderId: string): Promise<VenueOrderResult | null> {
+    const url = `${this.apiUrl}/portfolio/orders/${encodeURIComponent(orderId)}`;
+    return getJson<VenueOrderResult | null>(url, { headers: this.authHeaders('GET', url) });
+  }
+}
+
+export function signKalshiRequest(privateKeyPem: string, timestamp: string, method: string, path: string): string {
+  try {
+    const privateKey = createPrivateKey(privateKeyPem.replace(/\\n/g, '\n'));
+    return sign('sha256', Buffer.from(`${timestamp}${method.toUpperCase()}${path.split('?')[0]}`), {
+      key: privateKey,
+      padding: constants.RSA_PKCS1_PSS_PADDING,
+      saltLength: constants.RSA_PSS_SALTLEN_DIGEST
+    }).toString('base64');
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Kalshi private key could not sign request: ${detail}`);
+  }
 }
