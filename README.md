@@ -31,6 +31,6 @@ In local paths containing `:`, pnpm script PATH injection may fail. Running loca
 
 ## Configuration
 
-Copy `.env.example` into the deployment environment and provide real MySQL/TiDB, Redis, credential, provider, and alert-channel values. Live mode remains blocked until operator confirmation, credentials, reconciliation, kill-switch, and risk gates allow it.
+Copy `.env.example` into the deployment environment and provide real MySQL/TiDB, Redis, credential, provider, and alert-channel values. `REDIS_URL` must be a standard `redis://` or `rediss://` connection URL; Upstash REST URL/token values are not mapped into `REDIS_URL`. Live mode remains blocked until operator confirmation, credentials, reconciliation, kill-switch, and risk gates allow it.
 
 # XSPEC

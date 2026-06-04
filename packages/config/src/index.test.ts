@@ -15,6 +15,12 @@ describe('runtime config Kalshi credentials', () => {
   it('accepts valid Kalshi credentials without requiring live mode', () => {
     expect(loadConfig(baseEnv({ KALSHI_KEY_ID: 'key-id', KALSHI_PRIVATE_KEY: privateKeyPem() })).KALSHI_KEY_ID).toBe('key-id');
   });
+
+  it('requires a standard Redis connection URL', () => {
+    expect(() => loadConfig(baseEnv({ REDIS_URL: 'https://example.test' }))).toThrow(/REDIS_URL must use redis:\/\/ or rediss:\/\//);
+    expect(() => loadConfig(baseEnv({ REDIS_URL: 'redis://localhost:6379' }))).not.toThrow();
+    expect(() => loadConfig(baseEnv({ REDIS_URL: 'rediss://default:secret@example.test:6379' }))).not.toThrow();
+  });
 });
 
 function baseEnv(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {

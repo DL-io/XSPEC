@@ -1,1 +1,1 @@
-{"name":"@polyshore/observability","version":"2.0.0","private":true,"type":"module","main":"./src/index.ts","types":"./src/index.ts","exports":{".":{"types":"./src/index.ts","import":"./src/index.ts","default":"./src/index.ts"}},"scripts":{"build":"tsc --noEmit"}}
+{"name":"@polyshore/observability","version":"2.0.0","private":true,"type":"module","main":"./src/index.ts","types":"./src/index.ts","exports":{".":{"types":"./src/index.ts","import":"./src/index.ts","default":"./src/index.ts"}},"scripts":{"build":"tsc --noEmit"},"dependencies":{"redis":"^4.7.0"}}

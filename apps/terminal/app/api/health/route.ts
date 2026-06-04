@@ -1,7 +1,13 @@
+import { loadConfig } from '@polyshore/config';
 import { WorkerHealthRepository } from '@polyshore/db';
+import { checkRedisHealth } from '@polyshore/observability';
 import { getDb } from '../_server';
 
 export async function GET() {
-  const workers = await new WorkerHealthRepository(getDb()).latest();
-  return Response.json({ workers });
+  const config = loadConfig();
+  const [workers, redis] = await Promise.all([
+    new WorkerHealthRepository(getDb()).latest(),
+    checkRedisHealth(config.REDIS_URL)
+  ]);
+  return Response.json({ workers, dependencies: [redis] });
 }

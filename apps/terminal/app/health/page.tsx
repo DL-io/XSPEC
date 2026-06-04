@@ -13,8 +13,17 @@ interface Worker {
   metadata?: Record<string, unknown>;
 }
 
+interface Dependency {
+  name: string;
+  status: 'ok' | 'error';
+  latencyMs?: number;
+  checkedAt: string;
+  error?: string;
+}
+
 export default function SystemHealth() {
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [dependencies, setDependencies] = useState<Dependency[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,6 +34,7 @@ export default function SystemHealth() {
         if (!res.ok) throw new Error('Failed to fetch worker health');
         const data = await res.json();
         setWorkers(data.workers || []);
+        setDependencies(data.dependencies || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error loading health');
       } finally {
@@ -42,6 +52,7 @@ export default function SystemHealth() {
 
   const healthyCount = workers.filter((w) => w.status === 'ok').length;
   const unhealthyCount = workers.filter((w) => w.status === 'error').length;
+  const unhealthyDependencyCount = dependencies.filter((dependency) => dependency.status === 'error').length;
 
   return (
     <div className={styles.container}>
@@ -62,6 +73,51 @@ export default function SystemHealth() {
         <div className={styles.summaryCard}>
           <span className={styles.count}>{workers.length}</span>
           <span className={styles.label}>Total Workers</span>
+        </div>
+        <div className={`${styles.summaryCard} ${unhealthyDependencyCount > 0 ? styles.error : styles.healthy}`}>
+          <span className={styles.count}>{dependencies.length - unhealthyDependencyCount}/{dependencies.length}</span>
+          <span className={styles.label}>Dependencies</span>
+        </div>
+      </div>
+
+      <div className={styles.panel}>
+        <h2>Dependency Status</h2>
+        <div className={styles.workersList}>
+          {dependencies.length > 0 ? (
+            dependencies.map((dependency) => (
+              <div key={dependency.name} className={`${styles.workerCard} ${dependency.status === 'ok' ? styles.healthy : styles.error}`}>
+                <div className={styles.workerHeader}>
+                  <div className={styles.workerName}>
+                    <span className={styles.statusDot} />
+                    <span className={styles.name}>{dependency.name}</span>
+                  </div>
+                  <span className={`${styles.badge} ${dependency.status === 'ok' ? styles.ok : styles.err}`}>
+                    {dependency.status === 'ok' ? 'OK' : 'ERROR'}
+                  </span>
+                </div>
+                <div className={styles.workerDetails}>
+                  <div className={styles.detail}>
+                    <span className={styles.label}>Checked</span>
+                    <span className={styles.value}>{new Date(dependency.checkedAt).toLocaleTimeString()}</span>
+                  </div>
+                  {typeof dependency.latencyMs === 'number' && (
+                    <div className={styles.detail}>
+                      <span className={styles.label}>Latency</span>
+                      <span className={styles.value}>{dependency.latencyMs}ms</span>
+                    </div>
+                  )}
+                  {dependency.error && (
+                    <div className={styles.detail}>
+                      <span className={styles.label}>Last Error</span>
+                      <span className={`${styles.value} ${styles.errorText}`}>{dependency.error}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className={styles.emptyState}>No dependencies reported</div>
+          )}
         </div>
       </div>
 

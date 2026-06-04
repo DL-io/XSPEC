@@ -5,7 +5,7 @@ export const ConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   OPERATING_MODE: z.enum(['paper', 'live']).default('paper'),
   DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().min(1),
+  REDIS_URL: z.string().url().refine((value) => isRedisUrl(value), { message: 'REDIS_URL must use redis:// or rediss://' }),
   SESSION_SECRET: z.string().min(32),
   ENCRYPTION_KEY: z.string().min(32),
   POLYMARKET_GAMMA_URL: z.string().url().default('https://gamma-api.polymarket.com'),
@@ -58,6 +58,15 @@ function isValidPrivateKey(value: string): boolean {
   try {
     createPrivateKey(value.replace(/\\n/g, '\n'));
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function isRedisUrl(value: string): boolean {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'redis:' || protocol === 'rediss:';
   } catch {
     return false;
   }

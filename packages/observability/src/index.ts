@@ -1,5 +1,7 @@
 const SECRET_PATTERNS = [/api[_-]?key/i, /secret/i, /private[_-]?key/i, /token/i, /password/i];
 
+export * from './redis';
+
 export function sanitizeForLog(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeForLog);
   if (value && typeof value === 'object') {
