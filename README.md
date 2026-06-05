@@ -33,4 +33,6 @@ In local paths containing `:`, pnpm script PATH injection may fail. Running loca
 
 Copy `.env.example` into the deployment environment and provide real MySQL/TiDB, Redis, credential, provider, and alert-channel values. `REDIS_URL` must be a standard `redis://` or `rediss://` connection URL; Upstash REST URL/token values are not mapped into `REDIS_URL`. Live mode remains blocked until operator confirmation, credentials, reconciliation, kill-switch, and risk gates allow it.
 
+`pnpm validate-config` loads `.env` from the repository root for local validation. The command reports only validation status, loaded key names, and operating mode; it must not print secret values.
+
 # XSPEC

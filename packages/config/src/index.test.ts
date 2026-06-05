@@ -1,6 +1,9 @@
 import { generateKeyPairSync } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadConfig } from './index';
+import { loadConfig, validateConfigFromEnvFile } from './index';
 
 describe('runtime config Kalshi credentials', () => {
   it('requires Kalshi key id and private key as a pair', () => {
@@ -21,6 +24,34 @@ describe('runtime config Kalshi credentials', () => {
     expect(() => loadConfig(baseEnv({ REDIS_URL: 'redis://localhost:6379' }))).not.toThrow();
     expect(() => loadConfig(baseEnv({ REDIS_URL: 'rediss://default:secret@example.test:6379' }))).not.toThrow();
   });
+
+  it('loads .env during explicit validation', () => {
+    const cwd = tempDir();
+    writeFileSync(join(cwd, '.env'), [
+      'NODE_ENV=test',
+      'OPERATING_MODE=paper',
+      'DATABASE_URL=mysql://user:pass@localhost:3306/db',
+      'REDIS_URL=redis://localhost:6379',
+      'SESSION_SECRET=session-secret-at-least-thirty-two-chars',
+      'ENCRYPTION_KEY=encryption-key-at-least-thirty-two'
+    ].join('\n'));
+
+    expect(validateConfigFromEnvFile({ cwd, env: {} as NodeJS.ProcessEnv })).toMatchObject({
+      ok: true,
+      envFileLoaded: true,
+      operatingMode: 'paper'
+    });
+  });
+
+  it('fails clearly when required env is missing', () => {
+    expect(() => validateConfigFromEnvFile({ cwd: tempDir(), env: {} as NodeJS.ProcessEnv })).toThrow(/DATABASE_URL: Required/);
+  });
+
+  it('does not expose secret values in validation output', () => {
+    const secret = 'session-secret-value-that-must-not-print';
+    const result = validateConfigFromEnvFile({ env: baseEnv({ SESSION_SECRET: secret }) });
+    expect(JSON.stringify(result)).not.toContain(secret);
+  });
 });
 
 function baseEnv(overrides: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
@@ -36,4 +67,10 @@ function baseEnv(overrides: Record<string, string | undefined> = {}): NodeJS.Pro
 
 function privateKeyPem(): string {
   return generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+}
+
+function tempDir(): string {
+  const path = join(tmpdir(), `polyshore-config-${crypto.randomUUID()}`);
+  mkdirSync(path, { recursive: true });
+  return path;
 }

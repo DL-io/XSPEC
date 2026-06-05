@@ -1,7 +1,10 @@
 import { createPrivateKey } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
 
-export const ConfigSchema = z.object({
+const ConfigObjectSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   OPERATING_MODE: z.enum(['paper', 'live']).default('paper'),
   DATABASE_URL: z.string().min(1),
@@ -24,7 +27,9 @@ export const ConfigSchema = z.object({
   ALERT_WEBHOOK_URL: z.string().url().optional(),
   SMTP_URL: z.string().optional(),
   SMS_WEBHOOK_URL: z.string().url().optional()
-}).superRefine((value, ctx) => {
+});
+
+export const ConfigSchema = ConfigObjectSchema.superRefine((value, ctx) => {
   if ((value.KALSHI_KEY_ID && !value.KALSHI_PRIVATE_KEY) || (!value.KALSHI_KEY_ID && value.KALSHI_PRIVATE_KEY)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -52,6 +57,32 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
     throw new Error('Live mode requires exchange credentials and explicit operator activation workflow.');
   }
   return parsed.data;
+}
+
+export interface ConfigValidationResult {
+  ok: true;
+  envFileLoaded: boolean;
+  operatingMode: RuntimeConfig['OPERATING_MODE'];
+  configuredKeys: string[];
+}
+
+export function validateConfigFromEnvFile(options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): ConfigValidationResult {
+  const cwd = options.cwd ?? process.cwd();
+  const env = { ...(options.env ?? process.env) };
+  const envPath = resolve(cwd, '.env');
+  const envFileLoaded = existsSync(envPath);
+  if (envFileLoaded) {
+    const loaded = loadDotenv({ path: envPath, processEnv: env, override: false, quiet: true });
+    if (loaded.error) throw loaded.error;
+  }
+
+  const config = loadConfig(env);
+  return {
+    ok: true,
+    envFileLoaded,
+    operatingMode: config.OPERATING_MODE,
+    configuredKeys: Object.keys(ConfigObjectSchema.shape).filter((key) => Boolean(env[key]))
+  };
 }
 
 function isValidPrivateKey(value: string): boolean {

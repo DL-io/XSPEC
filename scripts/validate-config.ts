@@ -1,4 +1,8 @@
-import { loadConfig } from '@polyshore/config';
+import { validateConfigFromEnvFile } from '@polyshore/config';
 
-loadConfig();
-console.log('configuration valid');
+try {
+  console.log(JSON.stringify(validateConfigFromEnvFile()));
+} catch (error) {
+  console.error(error instanceof Error ? error.message : 'Invalid runtime configuration');
+  process.exitCode = 1;
+}
