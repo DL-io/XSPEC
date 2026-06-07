@@ -1,6 +1,6 @@
 import type { DecisionAudit, MandateId, NormalizedMarket, OperatingMode, OrderbookSnapshot, PortfolioState } from '@polyshore/core';
 import { assertCompleteDecisionAudit } from '../../../packages/audit/src/index.ts';
-import { DossierRepository, type OmegaDb, DecisionAuditRepository } from '../../../packages/db/src/index.ts';
+import { DossierRepository, type OmegaDb, DecisionAuditRepository, MarketFeatureRepository, OrderbookRepository, ProbabilityEstimateRepository, RiskEventRepository } from '../../../packages/db/src/index.ts';
 import { computeFeatureSnapshot } from '../../../packages/features/src/index.ts';
 import { buildEnsemble, generateModelEstimates } from '../../../packages/models/src/index.ts';
 import { proposeTrade } from '../../../packages/portfolio/src/index.ts';
@@ -28,10 +28,13 @@ export interface PipelineConfig {
 export async function evaluateMarketPipeline(db: OmegaDb, market: NormalizedMarket, config: PipelineConfig): Promise<DecisionAudit> {
   const now = config.now ?? new Date();
   const featureSnapshot = computeFeatureSnapshot(market, '1m');
+  if (config.capturedOrderbook) await new OrderbookRepository(db).put(config.capturedOrderbook);
+  await new MarketFeatureRepository(db).put(featureSnapshot);
   const marketWithFeatures = { ...market, featureSnapshot };
   const dossier = await buildDossier(marketWithFeatures, config.researchStages ?? defaultResearchStages());
   const dossierId = await new DossierRepository(db).put(dossier);
   const modelEstimates = generateModelEstimates({ market: marketWithFeatures, dossier, featureSnapshot });
+  await new ProbabilityEstimateRepository(db).putMany({ tenantId: config.tenantId, marketId: market.id, estimates: modelEstimates, createdAt: now });
   const ensembleOutput = buildEnsemble(modelEstimates);
   const tradeProposal = proposeTrade(marketWithFeatures, ensembleOutput, config.portfolio, config.mandateId);
   const riskDecision = evaluateRisk({
@@ -51,6 +54,7 @@ export async function evaluateMarketPipeline(db: OmegaDb, market: NormalizedMark
     now
   });
   const finalOutcome = !dossier.skipRecommended && ensembleOutput.recommendTrade && riskDecision.approved ? 'trade' : 'skip';
+  await new RiskEventRepository(db).appendFromDecision({ tenantId: config.tenantId, marketId: market.id, decision: riskDecision, createdAt: now });
   const audit: DecisionAudit = {
     id: crypto.randomUUID(),
     marketId: market.id,

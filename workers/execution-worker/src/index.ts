@@ -21,7 +21,7 @@ const connectors = {
 };
 
 async function executeOnce() {
-  const results = await processPendingApprovedAudits(db, { tenantId, mode: config.OPERATING_MODE, connectors });
+  const results = await processPendingApprovedAudits(db, { tenantId, mode: config.OPERATING_MODE, connectors, runtimeConfig: config });
   logInfo('execution cycle complete', { processed: results.length, mode: config.OPERATING_MODE });
 }
 

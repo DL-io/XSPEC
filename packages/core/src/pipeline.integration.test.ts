@@ -167,7 +167,7 @@ describe('authoritative trading pipeline', () => {
     const first = await processApprovedAudit(db as never, audit, { tenantId: 'tenant', mode: 'live', connector });
     const second = await processApprovedAudit(db as never, audit, { tenantId: 'tenant', mode: 'live', connector });
 
-    expect(first.state).toBe('ACCEPTED_BY_VENUE');
+    expect(first.state).toBe('ACCEPTED_BY_CLOB');
     expect(first.status).toBe('submitted');
     expect(second).toEqual(first);
     expect(connector.placeOrderCount).toBe(1);
@@ -218,7 +218,7 @@ describe('authoritative trading pipeline', () => {
 
     const execution = await processApprovedAudit(db as never, audit, { tenantId: 'tenant', mode: 'live', connector });
 
-    expect(execution.state).toBe('ACCEPTED_BY_VENUE');
+    expect(execution.state).toBe('ACCEPTED_BY_CLOB');
     expect(execution.status).toBe('submitted');
     expect(connector.placeOrderCount).toBe(1);
     expect(db.table(systemEvents)).toHaveLength(1);
@@ -332,7 +332,7 @@ class FakeConnector implements VenueConnector {
   constructor(private readonly portfolio: PortfolioState) {}
   async fetchMarkets() { return [marketFixture()]; }
   async fetchOrderbook() { return { marketId: 'market-1', source: this.id, bids: [{ price: 0.49, size: 1000 }], asks: [{ price: 0.51, size: 1000 }], capturedAt: new Date() }; }
-  async placeOrder(): Promise<VenueOrderResult> { return { venueOrderId: 'venue-1', clientOrderId: 'client', state: 'ACCEPTED_BY_VENUE', filledQuantity: 0 }; }
+  async placeOrder(): Promise<VenueOrderResult> { return { venueOrderId: 'venue-1', clientOrderId: 'client', state: 'ACCEPTED_BY_CLOB', filledQuantity: 0 }; }
   async cancelOrder() { return { venueOrderId: 'venue-1', confirmed: true }; }
   async fetchPositions() { return this.portfolio.positions; }
   async fetchPortfolio() { return this.portfolio; }
@@ -350,7 +350,7 @@ class CountingLiveConnector extends FakeConnector {
 
   async placeOrder(): Promise<VenueOrderResult> {
     this.placeOrderCount += 1;
-    return { venueOrderId: `venue-${this.placeOrderCount}`, clientOrderId: 'client', state: 'ACCEPTED_BY_VENUE', filledQuantity: 0 };
+    return { venueOrderId: `venue-${this.placeOrderCount}`, clientOrderId: 'client', state: 'ACCEPTED_BY_CLOB', filledQuantity: 0 };
   }
 }
 

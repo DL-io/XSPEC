@@ -1,9 +1,9 @@
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
-import type { AlertEvent, ApiClient, CalibrationRecord, DecisionAudit, ExecutionAuditResult, FeatureSnapshot, MarketDossier, MemoryMatch, NewOrder, NormalizedMarket, OrderLifecycleState, Playbook, PortfolioState, Position, ReconciliationAuditStatus, ResearchPack, Tenant, UsageMetric, User } from '@polyshore/core';
+import type { AlertEvent, ApiClient, CalibrationRecord, DecisionAudit, ExecutionAuditResult, FeatureSnapshot, MarketDossier, MemoryMatch, ModelEstimate, NewOrder, NormalizedMarket, OrderbookSnapshot, OrderLifecycleState, Playbook, PortfolioState, Position, ReconciliationAuditStatus, ResearchPack, RiskDecision, Tenant, UsageMetric, User } from '@polyshore/core';
 import type { LiveOrderStore } from '@polyshore/execution';
 import type { OmegaDb } from './client';
-import { apiClients, apiKeys, calibrationRecords, configOverrides, decisionAudits, dossiers, marketFeatures, marketMemory, markets, orders, orderStateTransitions, playbooks, positions, portfolioSnapshots, researchPacks, systemEvents, tenantUsers, tenants, usageMetrics, users } from './schema';
+import { apiClients, apiKeys, calibrationRecords, configOverrides, decisionAudits, dossiers, fills, marketFeatures, marketMemory, markets, normalizedOrderbooks, orders, orderStateTransitions, playbooks, portfolioSnapshots, positions, probabilityEstimates, reconciliationRuns, researchPacks, riskEvents, systemEvents, tenantUsers, tenants, usageMetrics, users } from './schema';
 
 export interface TenantUserRecord { id?: number; tenantId: string; userId: string; role: string; }
 export interface ApiKeyRecord { id: string; apiClientId: string; keyHash: string; createdAt: Date; }
@@ -15,6 +15,9 @@ export interface LocalOrderReconciliationRecord { venueOrderId: string; state: s
 export interface ReconciliationIncidentRecord { id: string; tenantId: string; report: unknown; acknowledgedAt?: Date; acknowledgedBy?: string; acknowledgmentReason?: string; clearedAt?: Date; clearReason?: string; createdAt: Date; updatedAt: Date; }
 export interface ReconciliationState { tenantId: string; severeMismatchOpen: boolean; incident?: ReconciliationIncidentRecord; acknowledged: boolean; }
 export interface WorkerHealthRecord { worker: string; status: 'ok' | 'error'; lastHeartbeatAt: Date; lastSuccessAt?: Date; lastError?: string; metadata?: Record<string, unknown>; }
+export interface FillRecord { id: string; tenantId: string; orderId: string; marketId: string; venueTradeId?: string; side: string; quantity: number; price: number; filledAt: Date; }
+export interface ReconciliationRunRecord { id: string; tenantId: string; ok: boolean; severe: boolean; mismatchCount: number; payload: unknown; checkedAt: Date; }
+export interface RiskEventRecord { id: string; tenantId: string; marketId?: string; gate: string; severity: string; reason: string; payload: unknown; createdAt: Date; }
 export interface SafetyState {
   tenantId: string;
   killSwitchActive: boolean;
@@ -310,6 +313,35 @@ export class MarketFeatureRepository {
   }
 }
 
+export class OrderbookRepository {
+  constructor(private readonly db: OmegaDb) {}
+
+  async put(snapshot: OrderbookSnapshot): Promise<void> {
+    const bestBid = snapshot.bids[0]?.price ?? 0;
+    const bestAsk = snapshot.asks[0]?.price ?? 0;
+    await this.db.insert(normalizedOrderbooks).values({
+      id: `${snapshot.marketId}:${snapshot.capturedAt.toISOString()}`,
+      marketId: snapshot.marketId,
+      source: snapshot.source,
+      bids: snapshot.bids,
+      asks: snapshot.asks,
+      bestBid,
+      bestAsk,
+      spread: bestBid > 0 && bestAsk > 0 ? Math.max(0, bestAsk - bestBid) : 0,
+      capturedAt: snapshot.capturedAt
+    }).onDuplicateKeyUpdate({
+      set: {
+        bids: snapshot.bids,
+        asks: snapshot.asks,
+        bestBid,
+        bestAsk,
+        spread: bestBid > 0 && bestAsk > 0 ? Math.max(0, bestAsk - bestBid) : 0,
+        capturedAt: snapshot.capturedAt
+      }
+    });
+  }
+}
+
 export class DossierRepository {
   constructor(private readonly db: OmegaDb) {}
 
@@ -425,6 +457,36 @@ export class DecisionAuditRepository {
   }
 }
 
+export class ProbabilityEstimateRepository {
+  constructor(private readonly db: OmegaDb) {}
+
+  async putMany(input: { tenantId: string; marketId: string; estimates: ModelEstimate[]; createdAt: Date }): Promise<void> {
+    for (const estimate of input.estimates) {
+      await this.db.insert(probabilityEstimates).values({
+        id: `${input.marketId}:${estimate.modelId}:${input.createdAt.toISOString()}`,
+        tenantId: input.tenantId,
+        marketId: input.marketId,
+        modelId: estimate.modelId,
+        probability: estimate.probability,
+        confidenceWeight: estimate.confidenceWeight,
+        freshnessScore: estimate.freshnessScore,
+        evidence: estimate.evidence,
+        failureReason: estimate.failureReason,
+        createdAt: input.createdAt
+      }).onDuplicateKeyUpdate({
+        set: {
+          probability: estimate.probability,
+          confidenceWeight: estimate.confidenceWeight,
+          freshnessScore: estimate.freshnessScore,
+          evidence: estimate.evidence,
+          failureReason: estimate.failureReason,
+          createdAt: input.createdAt
+        }
+      });
+    }
+  }
+}
+
 export class ResearchPackRepository {
   constructor(private readonly db: OmegaDb) {}
 
@@ -505,6 +567,26 @@ export class OrderRepository implements LiveOrderStore {
   async listForTenant(limit = 100) {
     const rows = await this.db.select().from(orders).where(eq(orders.tenantId, this.tenantId)).orderBy(desc(orders.createdAt)).limit(limit);
     return rows;
+  }
+}
+
+export class FillRepository {
+  constructor(private readonly db: OmegaDb) {}
+
+  async put(fill: FillRecord): Promise<void> {
+    await this.db.insert(fills).values(fill).onDuplicateKeyUpdate({
+      set: {
+        venueTradeId: fill.venueTradeId,
+        quantity: fill.quantity,
+        price: fill.price,
+        filledAt: fill.filledAt
+      }
+    });
+  }
+
+  async listForTenant(tenantId: string, limit = 100): Promise<FillRecord[]> {
+    const rows = await this.db.select().from(fills).where(eq(fills.tenantId, tenantId)).orderBy(desc(fills.filledAt)).limit(limit);
+    return rows as FillRecord[];
   }
 }
 
@@ -719,6 +801,40 @@ export class ReconciliationIncidentRepository {
       eventType,
       payload,
       createdAt
+    });
+  }
+}
+
+export class ReconciliationRunRepository {
+  constructor(private readonly db: OmegaDb) {}
+
+  async put(record: ReconciliationRunRecord): Promise<void> {
+    await this.db.insert(reconciliationRuns).values(record).onDuplicateKeyUpdate({
+      set: {
+        ok: record.ok,
+        severe: record.severe,
+        mismatchCount: record.mismatchCount,
+        payload: record.payload,
+        checkedAt: record.checkedAt
+      }
+    });
+  }
+}
+
+export class RiskEventRepository {
+  constructor(private readonly db: OmegaDb) {}
+
+  async appendFromDecision(input: { tenantId: string; marketId: string; decision: RiskDecision; createdAt: Date }): Promise<void> {
+    if (input.decision.approved) return;
+    await this.db.insert(riskEvents).values({
+      id: `risk:${input.marketId}:${input.createdAt.toISOString()}`,
+      tenantId: input.tenantId,
+      marketId: input.marketId,
+      gate: input.decision.blockedBy ?? 'unknown',
+      severity: 'warning',
+      reason: input.decision.reasons.join('; ') || input.decision.blockedBy || 'risk gate blocked decision',
+      payload: input.decision,
+      createdAt: input.createdAt
     });
   }
 }

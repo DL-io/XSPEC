@@ -1,4 +1,5 @@
 import type { DecisionAudit, ExecutionAuditResult, NewOrder, OperatingMode, OrderbookSnapshot, VenueConnector } from '@polyshore/core';
+import type { RuntimeConfig } from '@polyshore/config';
 import type { LiveOrderStore } from '@polyshore/execution';
 import { DecisionAuditRepository, OrderRepository, type OmegaDb } from '../../../packages/db/src/index.ts';
 import { classifyVenueExecutionError, executePaperOrder, submitLiveLimitOrder } from '../../../packages/execution/src/index.ts';
@@ -8,6 +9,7 @@ export interface ExecutionProcessorConfig {
   mode: OperatingMode;
   connector?: VenueConnector;
   connectors?: Partial<Record<string, VenueConnector>>;
+  runtimeConfig?: RuntimeConfig;
   paperLatencyMs?: number;
   maxDepthParticipation?: number;
   rejectionThreshold?: number;
@@ -38,7 +40,7 @@ export async function processApprovedAudit(db: OmegaDb, audit: DecisionAudit, co
           maxDepthParticipation: config.maxDepthParticipation ?? 0.1,
           rejectionThreshold: config.rejectionThreshold ?? 0.01
         })
-      : { result: await submitLiveLimitOrder(connector, order, existingOrderStore(orderStore, localOrderId)), realizedCost: undefined };
+      : { result: await submitLiveLimitOrder(connector, order, existingOrderStore(orderStore, localOrderId), config.runtimeConfig), realizedCost: undefined };
     const executionResult: ExecutionAuditResult = {
       venueOrderId: result.result.venueOrderId,
       state: result.result.state,

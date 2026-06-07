@@ -20,6 +20,8 @@ const ConfigObjectSchema = z.object({
   POLYMARKET_FUNDER_ADDRESS: z.string().optional(),
   POLYMARKET_SIGNATURE_TYPE: z.coerce.number().int().min(0).max(3).default(3),
   POLYMARKET_CHAIN_ID: z.coerce.number().int().default(137),
+  LIVE_TRADING_ENABLED: z.coerce.boolean().default(false),
+  KILLSWITCH_ARMED: z.coerce.boolean().default(false),
   KALSHI_API_URL: z.string().url().default('https://api.elections.kalshi.com/trade-api/v2'),
   KALSHI_KEY_ID: z.string().optional(),
   KALSHI_PRIVATE_KEY: z.string().optional(),
@@ -71,17 +73,57 @@ export const ConfigSchema = ConfigObjectSchema.superRefine((value, ctx) => {
 
 export type RuntimeConfig = z.infer<typeof ConfigSchema>;
 
+export interface LiveReadinessCheck {
+  ready: boolean;
+  missing: Record<string, string>;
+  configured: Record<string, boolean>;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
   const parsed = ConfigSchema.safeParse(env);
   if (!parsed.success) {
     throw new Error(`Invalid runtime configuration: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   }
-  const kalshiConfigured = Boolean(parsed.data.KALSHI_KEY_ID && parsed.data.KALSHI_PRIVATE_KEY);
-  const polymarketConfigured = Boolean(parsed.data.POLYMARKET_PRIVATE_KEY);
-  if (parsed.data.OPERATING_MODE === 'live' && !kalshiConfigured && !polymarketConfigured) {
-    throw new Error('Live mode requires exchange credentials and explicit operator activation workflow.');
+  const readiness = liveReadiness(parsed.data);
+  if (parsed.data.OPERATING_MODE === 'live' && !readiness.ready) {
+    throw new Error(`Live mode is not ready: ${Object.keys(readiness.missing).join(', ')}`);
   }
   return parsed.data;
+}
+
+export function liveReadiness(config: RuntimeConfig): LiveReadinessCheck {
+  const configured = {
+    LIVE_TRADING_ENABLED: config.LIVE_TRADING_ENABLED === true,
+    KILLSWITCH_ARMED: config.KILLSWITCH_ARMED === true,
+    POLYMARKET_PRIVATE_KEY: Boolean(config.POLYMARKET_PRIVATE_KEY),
+    POLYMARKET_API_KEY: Boolean(config.POLYMARKET_API_KEY),
+    POLYMARKET_SECRET: Boolean(config.POLYMARKET_SECRET),
+    POLYMARKET_PASSPHRASE: Boolean(config.POLYMARKET_PASSPHRASE),
+    POLYMARKET_CLOB_URL: Boolean(config.POLYMARKET_CLOB_URL),
+    DATABASE_URL: Boolean(config.DATABASE_URL),
+    REDIS_URL: Boolean(config.REDIS_URL),
+    SESSION_SECRET: config.SESSION_SECRET.length >= 32,
+    ENCRYPTION_KEY: config.ENCRYPTION_KEY.length >= 32
+  };
+  const descriptions: Record<keyof typeof configured, string> = {
+    LIVE_TRADING_ENABLED: 'must be true for live execution',
+    KILLSWITCH_ARMED: 'operator kill-switch control must be armed before live execution',
+    POLYMARKET_PRIVATE_KEY: 'required for EIP-712 order signing',
+    POLYMARKET_API_KEY: 'required for Polymarket L2 authenticated requests',
+    POLYMARKET_SECRET: 'required for Polymarket L2 authenticated requests',
+    POLYMARKET_PASSPHRASE: 'required for Polymarket L2 authenticated requests',
+    POLYMARKET_CLOB_URL: 'required for CLOB API calls',
+    DATABASE_URL: 'required for durable audit/order state',
+    REDIS_URL: 'required for distributed rate limiting and runtime coordination',
+    SESSION_SECRET: 'must be at least 32 characters',
+    ENCRYPTION_KEY: 'must be at least 32 characters'
+  };
+  const missing = Object.fromEntries(
+    Object.entries(configured)
+      .filter(([, ok]) => !ok)
+      .map(([key]) => [key, descriptions[key as keyof typeof configured]])
+  );
+  return { ready: Object.keys(missing).length === 0, missing, configured };
 }
 
 export interface ConfigValidationResult {
@@ -89,6 +131,7 @@ export interface ConfigValidationResult {
   envFileLoaded: boolean;
   operatingMode: RuntimeConfig['OPERATING_MODE'];
   configuredKeys: string[];
+  liveReadiness: LiveReadinessCheck;
 }
 
 export function validateConfigFromEnvFile(options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): ConfigValidationResult {
@@ -106,7 +149,8 @@ export function validateConfigFromEnvFile(options: { cwd?: string; env?: NodeJS.
     ok: true,
     envFileLoaded,
     operatingMode: config.OPERATING_MODE,
-    configuredKeys: Object.keys(ConfigObjectSchema.shape).filter((key) => Boolean(env[key]))
+    configuredKeys: Object.keys(ConfigObjectSchema.shape).filter((key) => Boolean(env[key])),
+    liveReadiness: liveReadiness(config)
   };
 }
 

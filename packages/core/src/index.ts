@@ -11,7 +11,7 @@ export type OrderLifecycleState =
   | 'ORDER_VALIDATED'
   | 'ORDER_SIGNED'
   | 'ORDER_POSTED'
-  | 'ACCEPTED_BY_VENUE'
+  | 'ACCEPTED_BY_CLOB'
   | 'PARTIALLY_FILLED'
   | 'FILLED'
   | 'CANCEL_REQUESTED'
@@ -93,7 +93,7 @@ export interface TradeProposal { marketId: string; side: Side; edge: number; adj
 export interface RiskDecision { approved: boolean; blockedBy?: string; reasons: string[]; coolingPeriodUntil?: Date; evaluatedGates: string[]; maxApprovedSize: number; }
 export interface OrderIntent { id: string; tenantId: string; mode: OperatingMode; proposal: TradeProposal; createdAt: Date; }
 export interface OrderStateTransition { id: string; orderId: string; from?: OrderLifecycleState; to: OrderLifecycleState; reason: string; createdAt: Date; }
-export type ExecutionAuditStatus = 'submitted' | 'rejected' | 'retryable' | 'failed' | 'unsupported';
+export type ExecutionAuditStatus = 'submitted' | 'rejected' | 'retryable' | 'failed';
 export interface ExecutionAuditResult { venueOrderId: string; state: OrderLifecycleState; status?: ExecutionAuditStatus; filledQuantity: number; averagePrice?: number; realizedCost?: number; processedAt: Date; error?: string; }
 export interface ReconciliationAuditStatus { checkedAt: Date; severe: boolean; blockNewOrders: boolean; mismatchCount: number; severeReasons: string[]; }
 export interface Position { id: string; marketId: string; side: Side; quantity: number; averagePrice: number; marketValue: number; category: string; venue: VenueId; }

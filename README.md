@@ -1,38 +1,99 @@
-# OMEGA
+# XSPEC / POLY-SHORE
 
-POLY-SHORE OMEGA X is a TypeScript-first prediction-market intelligence, risk, execution, reconciliation, and operator platform for Polymarket and Kalshi.
+TypeScript prediction-market trading infrastructure for Polymarket and Kalshi. The repo contains a Next.js operator terminal, venue connectors, scanner/research/execution/reconciliation workers, Drizzle/MySQL persistence, Redis-backed API controls, and risk gates.
 
-## Repository
+## Architecture
 
-- `apps/terminal`: Next.js 15 operator terminal and API routes
-- `packages/core`: canonical domain contracts
-- `packages/risk`: pure 16-gate Risk Fortress
-- `packages/execution`: paper and live limit-order execution contracts
-- `packages/reconciliation`: venue/local mismatch checks
-- `packages/db`: Drizzle/MySQL schema and repositories
-- `packages/research`: required dossier stages and structured provider chain
-- `workers/*`: scanner, research, execution, reconciliation, calibration, and alert workers
+- `apps/terminal`: operator dashboard and API routes
+- `packages/core`: shared domain contracts
+- `packages/venues`: Polymarket and Kalshi market/order connectors
+- `packages/scanner`: orderbook-aware market eligibility gates
+- `packages/research`: structured research dossier pipeline
+- `packages/models`: probability estimates and ensemble logic
+- `packages/risk`: 16 hard risk gates
+- `packages/execution`: paper and live order lifecycle handling
+- `packages/reconciliation`: local-vs-venue mismatch checks
+- `packages/db`: Drizzle schema, migrations, repositories
+- `workers/*`: scanner, execution, reconciliation, research, calibration, and alerts
+
+There is no `server/agent` tree in this checkout. The production runtime path is the package/worker pipeline above.
+
+## Install
+
+```bash
+pnpm install
+pnpm check
+pnpm preflight
+```
+
+## Environment
+
+Copy `.env.example` into the deployment environment and provide real MySQL/TiDB, Redis, operator, provider, alert, and venue values. Secret values must not be committed or logged.
+
+Required base keys:
+
+- `DATABASE_URL`
+- `REDIS_URL`
+- `SESSION_SECRET`
+- `ENCRYPTION_KEY`
+
+Live Polymarket execution additionally requires:
+
+- `LIVE_TRADING_ENABLED=true`
+- `KILLSWITCH_ARMED=true`
+- `POLYMARKET_PRIVATE_KEY`
+- `POLYMARKET_API_KEY`
+- `POLYMARKET_SECRET`
+- `POLYMARKET_PASSPHRASE`
+- funded wallet/proxy and sufficient CLOB balance/allowance
+
+`pnpm preflight` prints a live readiness map. Missing fields keep live mode blocked.
+
+## Paper Mode
+
+Paper mode is the default. Paper execution uses bid/ask orderbook depth, limit prices, partial fills, and rejected fills when executable depth is insufficient. Paper mode is suitable for scanner, research, risk, dashboard, and reconciliation dry runs, but it is not proof of live exchange readiness.
+
+## Live Mode
+
+Live mode fails closed by default. `OPERATING_MODE=live` is rejected unless the live readiness map is complete. Live execution uses `@polymarket/clob-client-v2`, a viem signer, signed GTC limit orders, L2 credentials, and pre-submit balance/allowance checks. Reconciliation and risk gates can still block orders after configuration passes.
+
+Live trading is **not ready** until external prerequisites are proven against the target environment: funded account, valid Polymarket credentials, allowances, database migrations applied, Redis reachable, workers heartbeating, and runtime smoke tests passing.
 
 ## Commands
 
 ```bash
-pnpm install
+pnpm lint
+pnpm check
 pnpm test
-pnpm preflight
 pnpm build
+pnpm preflight
+pnpm db:check
+pnpm db:migrate
 ```
 
-In local paths containing `:`, pnpm script PATH injection may fail. Running local binaries directly works:
+Run `pnpm db:migrate` only against the intended database. `pnpm db:push` is not defined in this repo.
 
-```bash
-./node_modules/.bin/tsc --noEmit
-./node_modules/.bin/vitest run
-```
+## Safety Gates
 
-## Configuration
+Risk gates enforce reconciliation state, live authorization, kill switch, daily loss, drawdown, exposure, open orders, minimum edge, minimum confidence, spread, liquidity participation, deep anomaly, and order sizing.
 
-Copy `.env.example` into the deployment environment and provide real MySQL/TiDB, Redis, credential, provider, and alert-channel values. `REDIS_URL` must be a standard `redis://` or `rediss://` connection URL; Upstash REST URL/token values are not mapped into `REDIS_URL`. Live mode remains blocked until operator confirmation, credentials, reconciliation, kill-switch, and risk gates allow it.
+Default first-live conservative mandate:
 
-`pnpm validate-config` loads `.env` from the repository root for local validation. The command reports only validation status, loaded key names, and operating mode; it must not print secret values.
+- `minEdge`: 0.06
+- `minConfidence`: 0.70
+- `maxSpread`: 0.03
+- `maxSingleMarketExposure`: 3%
+- `maxCategoryExposure`: 8%
+- `maxTotalExposure`: 20%
+- `fractionalKelly`: 0.25
 
-# XSPEC
+## Deployment
+
+Use Railway or a self-hosted Node process manager with MySQL-compatible storage and Redis. Start the terminal app plus the required workers. Confirm `/api/health`, `/api/overview`, worker heartbeats, reconciliation status, and `pnpm preflight` before any live-mode attempt.
+
+## Troubleshooting
+
+- Live config fails: run `pnpm preflight` and inspect `liveReadiness.missing`.
+- No candidates: check scanner worker logs, market liquidity, spreads, and orderbook freshness.
+- Live order rejected: check wallet balance, CLOB allowance, Polymarket L2 credentials, and reconciliation status.
+- Dashboard stale banner: scanner worker heartbeat or audit timestamps are old.

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @polyshore/terminal dev",
+    "lint": "./node_modules/.bin/tsc -b --noEmit",
     "check": "./node_modules/.bin/tsc -b --noEmit && ./node_modules/.bin/vitest run",
     "build": "./node_modules/.bin/tsc -b --noEmit && pnpm --filter @polyshore/terminal build",
     "typecheck": "./node_modules/.bin/tsc -b --noEmit",

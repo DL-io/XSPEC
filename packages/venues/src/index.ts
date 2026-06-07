@@ -102,6 +102,7 @@ export class PolymarketConnector implements VenueConnector {
   async placeOrder(order: NewOrder): Promise<VenueOrderResult> {
     const client = await this.authenticatedClient();
     const tokenID = this.tokenIdFor(order.marketId, order.side);
+    await assertPolymarketAllowance(client, tokenID, order);
     const response = await client.createAndPostOrder({
       tokenID,
       price: order.limitPrice,
@@ -270,11 +271,26 @@ function polymarketOrderState(status: string) {
   if (/partial/.test(normalized)) return 'PARTIALLY_FILLED';
   if (/cancel|expired/.test(normalized)) return 'CANCEL_CONFIRMED';
   if (/reject|fail|error/.test(normalized)) return 'REJECTED';
-  return 'ACCEPTED_BY_VENUE';
+  return 'ACCEPTED_BY_CLOB';
 }
 
 function normalizeUsdcAmount(value: number): number {
   return value > 100_000 ? value / 1_000_000 : value;
+}
+
+async function assertPolymarketAllowance(client: ClobClient, tokenID: string, order: NewOrder): Promise<void> {
+  const collateral = await client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+  const requiredNotional = order.quantity * order.limitPrice;
+  const balance = normalizeUsdcAmount(Number(collateral.balance));
+  if (balance < requiredNotional) throw new Error(`insufficient Polymarket collateral balance for order notional ${requiredNotional}`);
+  if (!hasUsableAllowance(collateral.allowances, requiredNotional)) throw new Error('insufficient Polymarket collateral allowance for CLOB order');
+  const conditional = await client.getBalanceAllowance({ asset_type: AssetType.CONDITIONAL, token_id: tokenID });
+  if (!hasUsableAllowance(conditional.allowances, order.quantity)) throw new Error('insufficient Polymarket conditional token allowance for CLOB order');
+}
+
+function hasUsableAllowance(allowances: Record<string, string>, required: number): boolean {
+  const values = Object.values(allowances).map((value) => normalizeUsdcAmount(Number(value))).filter(Number.isFinite);
+  return values.length > 0 && values.some((value) => value >= required);
 }
 
 export class KalshiConnector implements VenueConnector {

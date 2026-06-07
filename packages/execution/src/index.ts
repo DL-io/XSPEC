@@ -1,3 +1,4 @@
+import { liveReadiness, type RuntimeConfig } from '@polyshore/config';
 import type { ExecutionAuditStatus, NewOrder, OrderLifecycleState, OrderStateTransition, OrderbookSnapshot, VenueConnector, VenueOrderResult } from '@polyshore/core';
 
 export interface PaperExecutionConfig { latencyMs: number; maxDepthParticipation: number; rejectionThreshold: number; }
@@ -34,22 +35,23 @@ export async function executePaperOrder(order: NewOrder, book: OrderbookSnapshot
   };
 }
 
-export async function executeLiveLimitOrder(connector: VenueConnector, order: NewOrder): Promise<VenueOrderResult> {
+export async function executeLiveLimitOrder(connector: VenueConnector, order: NewOrder, config?: RuntimeConfig): Promise<VenueOrderResult> {
   if (order.limitPrice <= 0 || order.limitPrice >= 1) throw new Error('live execution requires a bounded limit price');
+  if (config) assertLiveReadiness(config);
   return connector.placeOrder(order);
 }
 
 export function classifyVenueExecutionError(error: unknown): ExecutionAuditStatus {
   const message = error instanceof Error ? error.message : String(error);
-  if (/polymarket live order signing is not configured|authenticated execution is unsupported/i.test(message)) return 'unsupported';
-  if (/credentials are required|requires live order credentials|not configured for tenant|bounded limit price|limit orders only/i.test(message)) return 'failed';
+  if (/credentials are required|requires live order credentials|not configured for tenant|bounded limit price|limit orders only|live readiness missing|insufficient .*allowance|insufficient .*balance/i.test(message)) return 'failed';
   if (/HTTP (408|409|425|429|5\d\d)\b|abort|timeout|timed out|ECONNRESET|ECONNREFUSED|EPIPE|network/i.test(message)) return 'retryable';
   if (/HTTP 4\d\d\b|rejected|invalid|insufficient/i.test(message)) return 'rejected';
   return 'failed';
 }
 
-export async function submitLiveLimitOrder(connector: VenueConnector, order: NewOrder, store: LiveOrderStore): Promise<VenueOrderResult> {
+export async function submitLiveLimitOrder(connector: VenueConnector, order: NewOrder, store: LiveOrderStore, config?: RuntimeConfig): Promise<VenueOrderResult> {
   if (order.limitPrice <= 0 || order.limitPrice >= 1) throw new Error('live execution requires limit orders only with bounded prices');
+  if (config) assertLiveReadiness(config);
   const orderId = await store.createIntent(order);
   await store.recordTransition(orderId, 'ORDER_VALIDATED', 'limit order validated');
   await store.recordTransition(orderId, 'ORDER_SIGNED', 'order delegated to venue signing adapter');
@@ -57,7 +59,7 @@ export async function submitLiveLimitOrder(connector: VenueConnector, order: New
   const result = await connector.placeOrder(order);
   if (!result.venueOrderId) throw new Error('venue accepted response did not include exchange order ID');
   await store.persistVenueOrderId(orderId, result.venueOrderId);
-  await store.recordTransition(orderId, result.state === 'REJECTED' ? 'REJECTED' : 'ACCEPTED_BY_VENUE', 'venue response persisted before accepted state', result.venueOrderId);
+  await store.recordTransition(orderId, result.state === 'REJECTED' ? 'REJECTED' : 'ACCEPTED_BY_CLOB', 'CLOB response persisted before accepted state', result.venueOrderId);
   return result;
 }
 
@@ -75,7 +77,12 @@ function rejected(order: NewOrder, reason: string): ExecutionResult {
 
 function transitions(orderId: string, finalState: OrderLifecycleState, reason: string): OrderStateTransition[] {
   const now = new Date();
-  const states: OrderLifecycleState[] = ['INTENT_CREATED', 'ORDER_VALIDATED', 'ORDER_SIGNED', 'ORDER_POSTED', 'ACCEPTED_BY_VENUE'];
-  if (finalState !== 'ACCEPTED_BY_VENUE') states.push(finalState);
+  const states: OrderLifecycleState[] = ['INTENT_CREATED', 'ORDER_VALIDATED', 'ORDER_SIGNED', 'ORDER_POSTED', 'ACCEPTED_BY_CLOB'];
+  if (finalState !== 'ACCEPTED_BY_CLOB') states.push(finalState);
   return states.map((to, index) => ({ id: `${orderId}:${index}:${to}`, orderId, from: index === 0 ? undefined : states[index - 1], to, reason, createdAt: now }));
+}
+
+function assertLiveReadiness(config: RuntimeConfig): void {
+  const readiness = liveReadiness(config);
+  if (!readiness.ready) throw new Error(`live readiness missing: ${Object.keys(readiness.missing).join(', ')}`);
 }

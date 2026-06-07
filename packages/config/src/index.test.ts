@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadConfig, validateConfigFromEnvFile } from './index';
+import { liveReadiness, loadConfig, validateConfigFromEnvFile } from './index';
 
 describe('runtime config Kalshi credentials', () => {
   it('requires Kalshi key id and private key as a pair', () => {
@@ -17,6 +17,26 @@ describe('runtime config Kalshi credentials', () => {
 
   it('accepts valid Kalshi credentials without requiring live mode', () => {
     expect(loadConfig(baseEnv({ KALSHI_KEY_ID: 'key-id', KALSHI_PRIVATE_KEY: privateKeyPem() })).KALSHI_KEY_ID).toBe('key-id');
+  });
+
+  it('fails live mode closed with an explicit missing-field readiness map', () => {
+    expect(() => loadConfig(baseEnv({ OPERATING_MODE: 'live' }))).toThrow(/Live mode is not ready/);
+    const readiness = liveReadiness(loadConfig(baseEnv()));
+    expect(readiness.ready).toBe(false);
+    expect(Object.keys(readiness.missing)).toContain('LIVE_TRADING_ENABLED');
+    expect(Object.keys(readiness.missing)).toContain('POLYMARKET_PRIVATE_KEY');
+  });
+
+  it('reports live readiness only when all required live controls and Polymarket credentials are set', () => {
+    const config = loadConfig(baseEnv({
+      LIVE_TRADING_ENABLED: 'true',
+      KILLSWITCH_ARMED: 'true',
+      POLYMARKET_PRIVATE_KEY: `0x${'1'.repeat(64)}`,
+      POLYMARKET_API_KEY: 'pm-key',
+      POLYMARKET_SECRET: 'pm-secret',
+      POLYMARKET_PASSPHRASE: 'pm-passphrase'
+    }));
+    expect(liveReadiness(config)).toMatchObject({ ready: true, missing: {} });
   });
 
   it('requires a standard Redis connection URL', () => {
