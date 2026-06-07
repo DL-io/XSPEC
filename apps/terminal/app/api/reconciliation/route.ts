@@ -3,12 +3,17 @@ import { PortfolioRepository, ReconciliationIncidentRepository } from '@polyshor
 import { authError, getDb, requireApiAccess } from '../_server';
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const query = ReconciliationQuerySchema.safeParse(Object.fromEntries(url.searchParams));
-  if (!query.success) return Response.json({ error: 'invalid reconciliation query', issues: query.error.issues }, { status: 400 });
-  const db = getDb();
-  const state = await new ReconciliationIncidentRepository(db).state(query.data.tenantId);
-  return Response.json({ state });
+  try {
+    const url = new URL(request.url);
+    const query = ReconciliationQuerySchema.safeParse(Object.fromEntries(url.searchParams));
+    if (!query.success) return Response.json({ error: 'invalid reconciliation query', issues: query.error.issues }, { status: 400 });
+    await requireApiAccess(request, { tenantId: query.data.tenantId, permission: 'read', apiScope: 'api:read' });
+    const db = getDb();
+    const state = await new ReconciliationIncidentRepository(db).state(query.data.tenantId);
+    return Response.json({ state });
+  } catch (error) {
+    return authError(error);
+  }
 }
 
 export async function PATCH(request: Request) {

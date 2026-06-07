@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import styles from './health.module.css';
 
+const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
+
 interface Worker {
   worker: string;
   status: 'ok' | 'error';
@@ -30,7 +32,7 @@ export default function SystemHealth() {
   useEffect(() => {
     const fetchWorkers = async () => {
       try {
-        const res = await fetch('/api/health');
+        const res = await fetch(`/api/health?tenantId=${tenantId}`);
         if (!res.ok) throw new Error('Failed to fetch worker health');
         const data = await res.json();
         setWorkers(data.workers || []);

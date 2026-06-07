@@ -49,7 +49,7 @@ export const marketFeatures = mysqlTable('market_features', {
   window: varchar('window', { length: 8 }).notNull(),
   payload: json('payload').notNull(),
   computedAt: timestamp('computed_at').notNull()
-});
+}, (table) => ({ marketWindowComputed: index('market_features_market_window_computed_idx').on(table.marketId, table.window, table.computedAt) }));
 
 export const dossiers = mysqlTable('dossiers', {
   id: varchar('id', { length: 128 }).primaryKey(),
@@ -57,7 +57,7 @@ export const dossiers = mysqlTable('dossiers', {
   payload: json('payload').notNull(),
   generatedAt: timestamp('generated_at').notNull(),
   freshnessExpiresAt: timestamp('freshness_expires_at').notNull()
-});
+}, (table) => ({ marketGenerated: index('dossiers_market_generated_idx').on(table.marketId, table.generatedAt) }));
 
 export const researchPacks = mysqlTable('research_packs', {
   id: varchar('id', { length: 128 }).primaryKey(),
@@ -66,7 +66,7 @@ export const researchPacks = mysqlTable('research_packs', {
   marketIds: json('market_ids').notNull(),
   html: text('html').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow()
-});
+}, (table) => ({ tenantCreated: index('research_packs_tenant_created_idx').on(table.tenantId, table.createdAt) }));
 
 export const decisionAudits = mysqlTable('decision_audits', {
   id: varchar('id', { length: 128 }).primaryKey(),
@@ -75,7 +75,10 @@ export const decisionAudits = mysqlTable('decision_audits', {
   payload: json('payload').notNull(),
   finalOutcome: varchar('final_outcome', { length: 16 }).notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow()
-});
+}, (table) => ({
+  tenantCreated: index('decision_audits_tenant_created_idx').on(table.tenantId, table.createdAt),
+  tenantOutcomeCreated: index('decision_audits_tenant_outcome_created_idx').on(table.tenantId, table.finalOutcome, table.createdAt)
+}));
 
 export const orders = mysqlTable('orders', {
   id: varchar('id', { length: 128 }).primaryKey(),
@@ -87,7 +90,10 @@ export const orders = mysqlTable('orders', {
   limitPrice: double('limit_price').notNull(),
   state: varchar('state', { length: 64 }).notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow()
-});
+}, (table) => ({
+  tenantCreated: index('orders_tenant_created_idx').on(table.tenantId, table.createdAt),
+  tenantVenueOrder: index('orders_tenant_venue_order_idx').on(table.tenantId, table.venueOrderId)
+}));
 
 export const orderStateTransitions = mysqlTable('order_state_transitions', {
   id: varchar('id', { length: 128 }).primaryKey(),
@@ -115,7 +121,7 @@ export const portfolioSnapshots = mysqlTable('portfolio_snapshots', {
   tenantId: varchar('tenant_id', { length: 64 }).notNull(),
   payload: json('payload').notNull(),
   capturedAt: timestamp('captured_at').notNull()
-});
+}, (table) => ({ tenantCaptured: index('portfolio_snapshots_tenant_captured_idx').on(table.tenantId, table.capturedAt) }));
 
 export const calibrationRecords = mysqlTable('calibration_records', {
   id: varchar('id', { length: 128 }).primaryKey(),
@@ -145,7 +151,10 @@ export const systemEvents = mysqlTable('system_events', {
   eventType: varchar('event_type', { length: 128 }).notNull(),
   payload: json('payload').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow()
-});
+}, (table) => ({
+  tenantEventCreated: index('system_events_tenant_event_created_idx').on(table.tenantId, table.eventType, table.createdAt),
+  eventCreated: index('system_events_event_created_idx').on(table.eventType, table.createdAt)
+}));
 
 export const apiClients = mysqlTable('api_clients', {
   id: varchar('id', { length: 128 }).primaryKey(),
@@ -153,14 +162,14 @@ export const apiClients = mysqlTable('api_clients', {
   name: varchar('name', { length: 255 }).notNull(),
   scopes: json('scopes').notNull(),
   rateLimitPerMinute: int('rate_limit_per_minute').notNull()
-});
+}, (table) => ({ tenant: index('api_clients_tenant_idx').on(table.tenantId) }));
 
 export const apiKeys = mysqlTable('api_keys', {
   id: varchar('id', { length: 128 }).primaryKey(),
   apiClientId: varchar('api_client_id', { length: 128 }).notNull(),
   keyHash: varchar('key_hash', { length: 255 }).notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow()
-});
+}, (table) => ({ clientHash: index('api_keys_client_hash_idx').on(table.apiClientId, table.keyHash) }));
 
 export const playbooks = mysqlTable('playbooks', {
   id: varchar('id', { length: 128 }).primaryKey(),
@@ -187,4 +196,4 @@ export const configOverrides = mysqlTable('config_overrides', {
   actorId: varchar('actor_id', { length: 64 }).notNull(),
   oldValue: json('old_value'),
   changedAt: timestamp('changed_at').notNull().defaultNow()
-});
+}, (table) => ({ tenantKeyChanged: index('config_overrides_tenant_key_changed_idx').on(table.tenantId, table.key, table.changedAt) }));

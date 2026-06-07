@@ -35,6 +35,8 @@ export default defineConfig({
     include: [
       'packages/**/*.test.ts',
       'packages/**/*.integration.test.ts',
+      'apps/**/*.test.ts',
+      'apps/**/*.integration.test.ts',
       'workers/**/*.test.ts',
       'workers/**/*.integration.test.ts'
     ],

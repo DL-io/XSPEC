@@ -5,6 +5,7 @@ import {
   ApiKeyRepository,
   CalibrationRecordRepository,
   ConfigOverrideRepository,
+  DecisionAuditRepository,
   MarketFeatureRepository,
   MarketMemoryRepository,
   PlaybookRepository,
@@ -115,6 +116,37 @@ describe('entity repositories', () => {
       'reconciliation.mismatch_acknowledged',
       'reconciliation.mismatch_cleared'
     ]);
+  });
+
+  it('hydrates audit events only for the audit tenant', async () => {
+    const db = new MemoryDb();
+    const repository = new DecisionAuditRepository(db as never);
+    const createdAt = new Date();
+
+    db.table(systemEvents).push(
+      {
+        id: 'event-victim',
+        tenantId: 'tenant-2',
+        severity: 'info',
+        eventType: 'audit.execution_result',
+        payload: { auditId: 'audit-1', tenantId: 'tenant-2', marketId: 'market-1', type: 'execution_result', payload: { state: 'FILLED' }, createdAt },
+        createdAt
+      },
+      {
+        id: 'event-owner',
+        tenantId: 'tenant-1',
+        severity: 'info',
+        eventType: 'audit.execution_result',
+        payload: { auditId: 'audit-1', tenantId: 'tenant-1', marketId: 'market-1', type: 'execution_result', payload: { state: 'REJECTED' }, createdAt },
+        createdAt
+      }
+    );
+
+    const events = await repository.listAuditEvents('audit-1', 'tenant-1');
+
+    expect(events).toHaveLength(1);
+    expect(events[0].tenantId).toBe('tenant-1');
+    expect((events[0].payload as { state: string }).state).toBe('REJECTED');
   });
 });
 

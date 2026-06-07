@@ -1,6 +1,12 @@
 import { loadConfig } from '@polyshore/config';
 import { can, roleFromHeader } from '@polyshore/auth';
 import { ApiKeyRepository, createDb } from '@polyshore/db';
+import { createClient, type RedisClientType } from 'redis';
+
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 120;
+const LOCAL_DEV_ROLE_HEADERS = process.env.NODE_ENV !== 'production' && process.env.TRUST_OPERATOR_ROLE_HEADERS === 'true';
+const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
+let redisClient: Promise<RedisClientType> | undefined;
 
 export function getDb() {
   // Avoid hard-crashing the entire route module during build/start when
@@ -15,25 +21,30 @@ export function getDb() {
 }
 
 export function jsonError(message: string, status = 500) {
-  return Response.json({ error: message }, { status });
+  const requestId = crypto.randomUUID();
+  return Response.json(
+    { error: status >= 500 ? 'internal server error' : message, requestId },
+    { status, headers: securityHeaders(requestId) }
+  );
 }
 
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
-export async function requireApiAccess(request: Request, input: { tenantId: string; permission: string }) {
-  rateLimit(request, input.tenantId);
+export async function requireApiAccess(request: Request, input: { tenantId: string; permission: string; apiScope?: string }) {
+  enforceOriginPolicy(request);
   const apiKey = request.headers.get('x-api-key') ?? bearerToken(request.headers.get('authorization'));
   if (apiKey) {
-    const apiClient = await new ApiKeyRepository(getDb()).validate({ tenantId: input.tenantId, rawKey: apiKey, requiredScope: input.permission });
+    const apiClient = await new ApiKeyRepository(getDb()).validate({ tenantId: input.tenantId, rawKey: apiKey, requiredScope: input.apiScope ?? input.permission });
     if (!apiClient) throw new ApiAuthError('invalid API key or scope', 401);
-    return { actorId: apiClient.apiClientId, role: 'api_only' as const };
+    await rateLimit(`api:${input.tenantId}:${apiClient.apiClientId}`, apiClient.rateLimitPerMinute);
+    return { actorId: apiClient.apiClientId, role: 'api_only' as const, tenantId: input.tenantId };
   }
+  if (!LOCAL_DEV_ROLE_HEADERS) throw new ApiAuthError('API key required', 401);
   const role = roleFromHeader(request.headers.get('x-polyshore-role'));
-  if (process.env.NODE_ENV === 'production' && process.env.TRUST_OPERATOR_ROLE_HEADERS !== 'true') {
-    throw new ApiAuthError('API key required for operator mutation', 401);
-  }
   if (!can(role, input.permission)) throw new ApiAuthError(`role ${role} lacks ${input.permission}`, 403);
-  return { actorId: request.headers.get('x-operator-id') ?? role, role };
+  const actorId = request.headers.get('x-operator-id') ?? role;
+  await rateLimit(`operator:${input.tenantId}:${actorId}:${trustedClientIp(request)}`, DEFAULT_RATE_LIMIT_PER_MINUTE);
+  return { actorId, role, tenantId: input.tenantId };
 }
 
 export class ApiAuthError extends Error {
@@ -44,22 +55,77 @@ export class ApiAuthError extends Error {
 
 export function authError(error: unknown) {
   if (error instanceof ApiAuthError) return jsonError(error.message, error.status);
-  throw error;
+  return jsonError('internal server error', 500);
 }
 
-function rateLimit(request: Request, tenantId: string) {
+export function securityHeaders(requestId = crypto.randomUUID()) {
+  return {
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'x-request-id': requestId
+  };
+}
+
+async function rateLimit(key: string, limitPerMinute: number) {
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    try {
+      const client = await getRedisClient(redisUrl);
+      const redisKey = `polyshore:rate-limit:${key}`;
+      const count = await client.incr(redisKey);
+      if (count === 1) await client.expire(redisKey, 60);
+      if (count > limitPerMinute) throw new ApiAuthError('rate limit exceeded', 429);
+    } catch (error) {
+      if (error instanceof ApiAuthError) throw error;
+      redisClient = undefined;
+      throw new ApiAuthError('rate limit backend unavailable', 503);
+    }
+    return;
+  }
+  if (process.env.NODE_ENV === 'production') throw new ApiAuthError('rate limit backend unavailable', 503);
   const now = Date.now();
-  const key = `${tenantId}:${request.headers.get('x-forwarded-for') ?? 'local'}`;
   const bucket = buckets.get(key);
   if (!bucket || bucket.resetAt <= now) {
     buckets.set(key, { count: 1, resetAt: now + 60_000 });
     return;
   }
   bucket.count += 1;
-  if (bucket.count > 120) throw new ApiAuthError('rate limit exceeded', 429);
+  if (bucket.count > limitPerMinute) throw new ApiAuthError('rate limit exceeded', 429);
+}
+
+async function getRedisClient(redisUrl: string): Promise<RedisClientType> {
+  if (!redisClient) {
+    redisClient = (async () => {
+      const client = createClient({ url: redisUrl });
+      client.on('error', () => undefined);
+      await client.connect();
+      return client as RedisClientType;
+    })();
+  }
+  return redisClient;
 }
 
 function bearerToken(value: string | null): string | undefined {
   if (!value?.startsWith('Bearer ')) return undefined;
   return value.slice('Bearer '.length).trim();
+}
+
+function enforceOriginPolicy(request: Request) {
+  const origin = request.headers.get('origin');
+  if (!origin) return;
+  const host = request.headers.get('host');
+  const allowed = new Set((process.env.ALLOWED_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean));
+  if (host) {
+    allowed.add(`https://${host}`);
+    if (process.env.NODE_ENV !== 'production') allowed.add(`http://${host}`);
+  }
+  if (!allowed.has(origin)) throw new ApiAuthError('origin not allowed', 403);
+}
+
+export function trustedClientIp(request: Request): string {
+  const direct = request.headers.get('x-real-ip') ?? 'local';
+  if (trustedProxyHops <= 0) return direct;
+  const forwarded = request.headers.get('x-forwarded-for')?.split(',').map((part) => part.trim()).filter(Boolean) ?? [];
+  return forwarded.at(-trustedProxyHops) ?? direct;
 }

@@ -152,13 +152,13 @@ export class ApiKeyRepository {
     return rows as ApiKeyRecord[];
   }
 
-  async validate(input: { tenantId: string; rawKey: string; requiredScope: string }): Promise<{ apiClientId: string; scopes: string[] } | null> {
+  async validate(input: { tenantId: string; rawKey: string; requiredScope: string }): Promise<{ apiClientId: string; scopes: string[]; rateLimitPerMinute: number } | null> {
     const clients = await new ApiClientRepository(this.db).listForTenant(input.tenantId);
     const keyHash = hashApiKey(input.rawKey);
     for (const client of clients) {
       if (!client.scopes.includes(input.requiredScope) && !client.scopes.includes('*')) continue;
       const keys = await this.listForClient(client.id);
-      if (keys.some((key) => key.keyHash === keyHash)) return { apiClientId: client.id, scopes: client.scopes };
+      if (keys.some((key) => key.keyHash === keyHash)) return { apiClientId: client.id, scopes: client.scopes, rateLimitPerMinute: client.rateLimitPerMinute };
     }
     return null;
   }
@@ -390,13 +390,23 @@ export class DecisionAuditRepository {
     });
   }
 
-  async listAuditEvents(auditId: string): Promise<AuditEventRecord[]> {
-    const rows = await this.db.select().from(systemEvents);
+  async listAuditEvents(auditId: string, tenantId?: string): Promise<AuditEventRecord[]> {
+    const tenant = tenantId ?? await this.tenantForAudit(auditId);
+    if (!tenant) return [];
+    const rows = await this.db.select().from(systemEvents).where(eq(systemEvents.tenantId, tenant));
     return rows
       .filter((row) => typeof row.eventType === 'string' && row.eventType.startsWith('audit.'))
+      .filter((row) => row.tenantId === tenant)
       .map((row) => row.payload as AuditEventRecord)
-      .filter((event) => event.auditId === auditId)
+      .filter((event) => event.auditId === auditId && event.tenantId === tenant)
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
+
+  private async tenantForAudit(auditId: string): Promise<string | undefined> {
+    const auditRows = await this.db.select().from(decisionAudits).where(eq(decisionAudits.id, auditId)).limit(1);
+    const tenantId = auditRows[0]?.tenantId;
+    if (!tenantId) return undefined;
+    return tenantId;
   }
 
   async getAuditWithEvents(auditId: string): Promise<DecisionAudit | null> {
@@ -406,7 +416,7 @@ export class DecisionAuditRepository {
   }
 
   private async hydrateAudit(audit: DecisionAudit): Promise<DecisionAudit> {
-    const events = await this.listAuditEvents(audit.id);
+    const events = await this.listAuditEvents(audit.id, audit.tenantId);
     return events.reduce((current, event) => {
       if (event.type === 'execution_result') return { ...current, executionResult: event.payload as ExecutionAuditResult };
       if (event.type === 'reconciliation_status') return { ...current, reconciliationStatus: event.payload as ReconciliationAuditStatus };
@@ -439,7 +449,7 @@ export class OrderRepository implements LiveOrderStore {
   constructor(private readonly db: OmegaDb, private readonly tenantId: string) {}
 
   async get(orderId: string): Promise<{ id: string; state: OrderLifecycleState; venueOrderId?: string | null } | null> {
-    const rows = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const rows = await this.db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.tenantId, this.tenantId))).limit(1);
     return rows[0] as { id: string; state: OrderLifecycleState; venueOrderId?: string | null } | undefined ?? null;
   }
 
@@ -462,7 +472,8 @@ export class OrderRepository implements LiveOrderStore {
   }
 
   async recordTransition(orderId: string, to: OrderLifecycleState, reason: string, venueOrderId?: string): Promise<void> {
-    const current = await this.db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const current = await this.db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.tenantId, this.tenantId))).limit(1);
+    if (!current[0]) throw new Error(`Order ${orderId} not found for tenant ${this.tenantId}`);
     const fromState = current[0]?.state;
     await this.db.insert(orderStateTransitions).values({
       id: crypto.randomUUID(),
@@ -472,11 +483,11 @@ export class OrderRepository implements LiveOrderStore {
       reason,
       createdAt: new Date()
     });
-    await this.db.update(orders).set({ state: to, venueOrderId: venueOrderId ?? current[0]?.venueOrderId }).where(eq(orders.id, orderId));
+    await this.db.update(orders).set({ state: to, venueOrderId: venueOrderId ?? current[0]?.venueOrderId }).where(and(eq(orders.id, orderId), eq(orders.tenantId, this.tenantId)));
   }
 
   async persistVenueOrderId(orderId: string, venueOrderId: string): Promise<void> {
-    await this.db.update(orders).set({ venueOrderId }).where(eq(orders.id, orderId));
+    await this.db.update(orders).set({ venueOrderId }).where(and(eq(orders.id, orderId), eq(orders.tenantId, this.tenantId)));
   }
 
   async listForReconciliation(): Promise<LocalOrderReconciliationRecord[]> {
@@ -772,7 +783,7 @@ export class WorkerHealthRepository {
   }
 
   async latest(): Promise<WorkerHealthRecord[]> {
-    const rows = await this.db.select().from(systemEvents);
+    const rows = await this.db.select().from(systemEvents).where(eq(systemEvents.eventType, 'worker.health'));
     const byWorker = new Map<string, WorkerHealthRecord>();
     for (const row of rows.filter((entry) => entry.eventType === 'worker.health').sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
       const health = row.payload as WorkerHealthRecord;

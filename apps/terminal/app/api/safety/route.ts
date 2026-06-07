@@ -3,11 +3,16 @@ import { ConfigOverrideRepository } from '@polyshore/db';
 import { authError, getDb, requireApiAccess } from '../_server';
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const query = SafetyQuerySchema.safeParse(Object.fromEntries(url.searchParams));
-  if (!query.success) return Response.json({ error: 'invalid safety query', issues: query.error.issues }, { status: 400 });
-  const state = await new ConfigOverrideRepository(getDb()).readSafetyState(query.data.tenantId);
-  return Response.json({ state });
+  try {
+    const url = new URL(request.url);
+    const query = SafetyQuerySchema.safeParse(Object.fromEntries(url.searchParams));
+    if (!query.success) return Response.json({ error: 'invalid safety query', issues: query.error.issues }, { status: 400 });
+    await requireApiAccess(request, { tenantId: query.data.tenantId, permission: 'read', apiScope: 'api:read' });
+    const state = await new ConfigOverrideRepository(getDb()).readSafetyState(query.data.tenantId);
+    return Response.json({ state });
+  } catch (error) {
+    return authError(error);
+  }
 }
 
 export async function PATCH(request: Request) {

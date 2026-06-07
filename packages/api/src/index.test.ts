@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ReconciliationQuerySchema, ReconciliationUpdateSchema, SafetyUpdateSchema } from './index';
+import { DossierQuerySchema, ReconciliationQuerySchema, ReconciliationUpdateSchema, SafetyUpdateSchema } from './index';
 
 describe('safety API schemas', () => {
   it('requires a tenant and at least one safety update', () => {
@@ -17,5 +17,10 @@ describe('safety API schemas', () => {
     expect(ReconciliationUpdateSchema.safeParse({ tenantId: 'tenant-1', actorId: 'operator-1', action: 'acknowledge', reason: 'reviewed mismatch' }).success).toBe(true);
     expect(ReconciliationUpdateSchema.safeParse({ tenantId: 'tenant-1', actorId: 'operator-1', action: 'clear', reason: 'remediated' }).success).toBe(true);
     expect(ReconciliationUpdateSchema.safeParse({ tenantId: 'tenant-1', actorId: 'operator-1', action: 'ignore', reason: 'bad action' }).success).toBe(false);
+  });
+
+  it('requires tenant context for dossier reads', () => {
+    expect(DossierQuerySchema.safeParse({ tenantId: 'tenant-1', marketId: 'market-1' }).success).toBe(true);
+    expect(DossierQuerySchema.safeParse({ marketId: 'market-1' }).success).toBe(false);
   });
 });
