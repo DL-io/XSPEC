@@ -1,5 +1,8 @@
 import { constants, createPrivateKey, sign } from 'node:crypto';
+import { AssetType, Chain, ClobClient, OrderType, Side as ClobSide, SignatureTypeV2, type ApiKeyCreds, type OpenOrder, type OrderResponse, type Trade } from '@polymarket/clob-client-v2';
 import type { NewOrder, NormalizedMarket, OrderbookSnapshot, PortfolioState, Position, VenueCancelResult, VenueConnector, VenueOrderResult } from '@polyshore/core';
+import { createWalletClient, http, type Hex } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 
 async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
@@ -15,18 +18,44 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export class PolymarketConnector implements VenueConnector {
   id = 'polymarket' as const;
-  constructor(private readonly gammaUrl: string, private readonly clobUrl: string, private readonly tenantId: string) {}
+  private readonly outcomeTokenIds = new Map<string, { yes: string; no?: string }>();
+  private clobClient?: ClobClient;
+
+  constructor(
+    private readonly gammaUrl: string,
+    private readonly clobUrl: string,
+    private readonly tenantId: string,
+    auth?: PolymarketAuthConfig
+  ) {
+    if (auth?.privateKey) {
+      const account = privateKeyToAccount(auth.privateKey as Hex);
+      const signer = createWalletClient({ account, transport: http() });
+      this.clobClient = new ClobClient({
+        host: clobUrl,
+        chain: auth.chainId ?? Chain.POLYGON,
+        signer,
+        creds: auth.creds,
+        signatureType: auth.signatureType ?? SignatureTypeV2.POLY_1271,
+        funderAddress: auth.funderAddress,
+        throwOnError: true
+      });
+    }
+  }
 
   async fetchMarkets(): Promise<NormalizedMarket[]> {
     const rows = await getJson<Array<Record<string, unknown>>>(`${this.gammaUrl}/markets?active=true&closed=false`);
     return rows.map((row) => {
+      const conditionId = String(row.conditionId ?? row.condition_id ?? row.id ?? row.slug ?? '');
+      const tokenIds = parsePolymarketTokenIds(row);
+      const marketId = `polymarket:${conditionId}`;
+      if (tokenIds.yes) this.outcomeTokenIds.set(marketId, tokenIds);
       const bestBid = Number(row.bestBid ?? row.best_bid ?? 0);
       const bestAsk = Number(row.bestAsk ?? row.best_ask ?? 0);
       const midpoint = bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : 0;
       return {
-        id: `polymarket:${String(row.id ?? row.conditionId ?? row.slug)}`,
+        id: marketId,
         source: 'polymarket',
-        externalId: String(row.id ?? row.conditionId ?? ''),
+        externalId: conditionId,
         slug: String(row.slug ?? ''),
         question: String(row.question ?? row.title ?? ''),
         resolutionCriteria: String(row.resolutionSource ?? row.rules ?? ''),
@@ -59,7 +88,7 @@ export class PolymarketConnector implements VenueConnector {
   }
 
   async fetchOrderbook(marketId: string): Promise<OrderbookSnapshot> {
-    const tokenId = encodeURIComponent(marketId.replace(/^polymarket:/, ''));
+    const tokenId = encodeURIComponent(this.tokenIdFor(marketId, 'yes'));
     const book = await getJson<{ bids?: { price: string; size: string }[]; asks?: { price: string; size: string }[] }>(`${this.clobUrl}/book?token_id=${tokenId}`);
     return {
       marketId,
@@ -70,13 +99,182 @@ export class PolymarketConnector implements VenueConnector {
     };
   }
 
-  async placeOrder(_order: NewOrder): Promise<VenueOrderResult> {
-    throw new Error('Polymarket live order signing is not configured. Enable a signing adapter before live mode.');
+  async placeOrder(order: NewOrder): Promise<VenueOrderResult> {
+    const client = await this.authenticatedClient();
+    const tokenID = this.tokenIdFor(order.marketId, order.side);
+    const response = await client.createAndPostOrder({
+      tokenID,
+      price: order.limitPrice,
+      side: ClobSide.BUY,
+      size: order.quantity
+    }, { tickSize: '0.01' }, OrderType.GTC) as OrderResponse;
+    if (!response.success) throw new Error(response.errorMsg || 'Polymarket order rejected by CLOB');
+    return mapPolymarketOrderResponse(response, order.clientOrderId);
   }
-  async cancelOrder(_orderId: string): Promise<VenueCancelResult> { throw new Error('Polymarket cancel requires live order credentials.'); }
-  async fetchPositions(): Promise<Position[]> { throw new Error('Polymarket authenticated position retrieval is not configured.'); }
-  async fetchPortfolio(): Promise<PortfolioState> { throw new Error(`Polymarket portfolio retrieval is not configured for tenant ${this.tenantId}.`); }
-  async fetchOrder(_orderId: string): Promise<VenueOrderResult | null> { throw new Error('Polymarket authenticated order retrieval is not configured.'); }
+
+  async cancelOrder(orderId: string): Promise<VenueCancelResult> {
+    const response = await this.authenticatedClient().then((client) => client.cancelOrder({ orderID: orderId })) as { canceled?: string[]; not_canceled?: Record<string, string>; status?: string };
+    const failedReason = response.not_canceled?.[orderId];
+    return { venueOrderId: orderId, confirmed: !failedReason && (response.canceled?.includes(orderId) || response.status === 'success'), raw: response };
+  }
+
+  async fetchPositions(): Promise<Position[]> {
+    const trades = await this.authenticatedClient().then((client) => client.getTrades(undefined, true)) as Trade[];
+    const byToken = new Map<string, Position>();
+    for (const trade of trades) {
+      const size = Number(trade.size);
+      const price = Number(trade.price);
+      const quantityDelta = trade.side === ClobSide.BUY ? size : -size;
+      const existing = byToken.get(trade.asset_id);
+      const quantity = (existing?.quantity ?? 0) + quantityDelta;
+      if (Math.abs(quantity) < 1e-9) {
+        byToken.delete(trade.asset_id);
+        continue;
+      }
+      const marketId = `polymarket:${trade.market}`;
+      const marketValue = quantity * price;
+      const averagePrice = existing
+        ? ((existing.averagePrice * Math.abs(existing.quantity)) + (price * Math.abs(quantityDelta))) / (Math.abs(existing.quantity) + Math.abs(quantityDelta))
+        : price;
+      byToken.set(trade.asset_id, {
+        id: `polymarket:${trade.asset_id}`,
+        marketId,
+        side: trade.outcome?.toLowerCase() === 'no' ? 'no' : 'yes',
+        quantity,
+        averagePrice,
+        marketValue,
+        category: 'uncategorized',
+        venue: this.id
+      });
+    }
+    return [...byToken.values()];
+  }
+
+  async fetchPortfolio(): Promise<PortfolioState> {
+    const client = await this.authenticatedClient();
+    const [positions, collateral] = await Promise.all([
+      this.fetchPositions(),
+      client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL })
+    ]);
+    const cash = normalizeUsdcAmount(Number(collateral.balance));
+    const totalExposure = positions.reduce((sum, position) => sum + position.marketValue, 0);
+    const categoryExposure = positions.reduce<Record<string, number>>((acc, position) => {
+      acc[position.category] = (acc[position.category] ?? 0) + position.marketValue;
+      return acc;
+    }, {});
+    return {
+      tenantId: this.tenantId,
+      cash,
+      equity: cash + totalExposure,
+      totalExposure,
+      categoryExposure,
+      positions,
+      openOrderCount: (await client.getOpenOrders(undefined, true)).length,
+      dailyPnl: 0,
+      maxDrawdown: 0,
+      severeMismatchOpen: false,
+      reconciledAt: new Date()
+    };
+  }
+
+  async fetchOrder(orderId: string): Promise<VenueOrderResult | null> {
+    try {
+      const order = await this.authenticatedClient().then((client) => client.getOrder(orderId));
+      return mapPolymarketOpenOrder(order);
+    } catch (error) {
+      if (/404|not found/i.test(error instanceof Error ? error.message : String(error))) return null;
+      throw error;
+    }
+  }
+
+  private async authenticatedClient(): Promise<ClobClient> {
+    if (!this.clobClient) throw new Error('Polymarket credentials are required for authenticated operations.');
+    if (!this.clobClient.creds) {
+      const creds = await this.clobClient.createOrDeriveApiKey();
+      this.clobClient = new ClobClient({
+        host: this.clobUrl,
+        chain: this.clobClient.chainId,
+        signer: this.clobClient.signer,
+        creds,
+        signatureType: this.clobClient.signatureType,
+        funderAddress: this.clobClient.funderAddress,
+        throwOnError: true
+      });
+    }
+    return this.clobClient;
+  }
+
+  private tokenIdFor(marketId: string, side: NewOrder['side']): string {
+    const mapped = this.outcomeTokenIds.get(marketId);
+    const tokenId = side === 'yes' ? mapped?.yes : mapped?.no;
+    if (tokenId) return tokenId;
+    if (side === 'yes') return marketId.replace(/^polymarket:/, '');
+    throw new Error(`Polymarket NO token is not known for ${marketId}; scanner must hydrate outcome token IDs before live execution.`);
+  }
+}
+
+export interface PolymarketAuthConfig {
+  privateKey?: string;
+  creds?: ApiKeyCreds;
+  funderAddress?: string;
+  signatureType?: SignatureTypeV2;
+  chainId?: Chain;
+}
+
+function parsePolymarketTokenIds(row: Record<string, unknown>): { yes: string; no?: string } {
+  const rawTokenIds = parseUnknownArray(row.clobTokenIds ?? row.clob_token_ids ?? row.tokenIds ?? row.token_ids);
+  const rawOutcomes = parseUnknownArray(row.outcomes ?? row.outcomeNames ?? row.outcome_names).map((value) => String(value).toLowerCase());
+  const yesIndex = rawOutcomes.findIndex((outcome) => outcome === 'yes');
+  const noIndex = rawOutcomes.findIndex((outcome) => outcome === 'no');
+  const yes = String(rawTokenIds[yesIndex >= 0 ? yesIndex : 0] ?? row.clobTokenId ?? row.token_id ?? '');
+  const noValue = rawTokenIds[noIndex >= 0 ? noIndex : 1];
+  return { yes, no: noValue === undefined ? undefined : String(noValue) };
+}
+
+function parseUnknownArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+}
+
+function mapPolymarketOrderResponse(response: OrderResponse, clientOrderId: string): VenueOrderResult {
+  const filledQuantity = Number(response.takingAmount || response.makingAmount || 0);
+  return {
+    venueOrderId: response.orderID,
+    clientOrderId,
+    state: polymarketOrderState(response.status),
+    filledQuantity,
+    raw: response
+  };
+}
+
+function mapPolymarketOpenOrder(order: OpenOrder): VenueOrderResult {
+  return {
+    venueOrderId: order.id,
+    clientOrderId: order.id,
+    state: polymarketOrderState(order.status),
+    filledQuantity: Number(order.size_matched),
+    averagePrice: Number(order.price),
+    raw: order
+  };
+}
+
+function polymarketOrderState(status: string) {
+  const normalized = status.toLowerCase();
+  if (/filled|matched/.test(normalized)) return 'FILLED';
+  if (/partial/.test(normalized)) return 'PARTIALLY_FILLED';
+  if (/cancel|expired/.test(normalized)) return 'CANCEL_CONFIRMED';
+  if (/reject|fail|error/.test(normalized)) return 'REJECTED';
+  return 'ACCEPTED_BY_VENUE';
+}
+
+function normalizeUsdcAmount(value: number): number {
+  return value > 100_000 ? value / 1_000_000 : value;
 }
 
 export class KalshiConnector implements VenueConnector {

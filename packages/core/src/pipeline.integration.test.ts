@@ -211,17 +211,16 @@ describe('authoritative trading pipeline', () => {
     expect((db.table(decisionAudits)[0].payload as typeof audit).executionResult).toBeUndefined();
   });
 
-  it('gates Polymarket live execution as explicitly unsupported before venue submission', async () => {
+  it('submits Polymarket live execution through the configured venue connector', async () => {
     const db = new MemoryDb();
-    const audit = await evaluateMarketPipeline(db as never, marketFixture(), pipelineConfig(portfolioFixture()));
+    const audit = await evaluateMarketPipeline(db as never, { ...marketFixture(), source: 'polymarket' }, pipelineConfig(portfolioFixture()));
     const connector = new CountingLiveConnector('polymarket');
 
     const execution = await processApprovedAudit(db as never, audit, { tenantId: 'tenant', mode: 'live', connector });
 
-    expect(execution.state).toBe('REJECTED');
-    expect(execution.status).toBe('unsupported');
-    expect(execution.error).toBe('Polymarket authenticated live execution is unsupported until a signing adapter is configured.');
-    expect(connector.placeOrderCount).toBe(0);
+    expect(execution.state).toBe('ACCEPTED_BY_VENUE');
+    expect(execution.status).toBe('submitted');
+    expect(connector.placeOrderCount).toBe(1);
     expect(db.table(systemEvents)).toHaveLength(1);
     expect((db.table(decisionAudits)[0].payload as typeof audit).executionResult).toBeUndefined();
   });

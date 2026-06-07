@@ -6,7 +6,8 @@ import { classifyVenueExecutionError, executePaperOrder, submitLiveLimitOrder } 
 export interface ExecutionProcessorConfig {
   tenantId: string;
   mode: OperatingMode;
-  connector: VenueConnector;
+  connector?: VenueConnector;
+  connectors?: Partial<Record<string, VenueConnector>>;
   paperLatencyMs?: number;
   maxDepthParticipation?: number;
   rejectionThreshold?: number;
@@ -29,16 +30,7 @@ export async function processApprovedAudit(db: OmegaDb, audit: DecisionAudit, co
   const orderStore = new OrderRepository(db, config.tenantId);
   const localOrderId = await orderStore.createIntent(order, orderIntentId(hydratedAudit));
   await orderStore.recordTransition(localOrderId, 'ORDER_VALIDATED', 'approved audit converted to order intent');
-  if (config.mode === 'live' && config.connector.id === 'polymarket') {
-    return rejectLiveOrder({
-      auditStore,
-      orderStore,
-      auditId: hydratedAudit.id,
-      orderId: localOrderId,
-      status: 'unsupported',
-      reason: 'Polymarket authenticated live execution is unsupported until a signing adapter is configured.'
-    });
-  }
+  const connector = connectorForAudit(hydratedAudit, config);
   try {
     const result = config.mode === 'paper'
       ? await executePaperOrder(order, capturedBookOrThrow(hydratedAudit), {
@@ -46,7 +38,7 @@ export async function processApprovedAudit(db: OmegaDb, audit: DecisionAudit, co
           maxDepthParticipation: config.maxDepthParticipation ?? 0.1,
           rejectionThreshold: config.rejectionThreshold ?? 0.01
         })
-      : { result: await submitLiveLimitOrder(config.connector, order, existingOrderStore(orderStore, localOrderId)), realizedCost: undefined };
+      : { result: await submitLiveLimitOrder(connector, order, existingOrderStore(orderStore, localOrderId)), realizedCost: undefined };
     const executionResult: ExecutionAuditResult = {
       venueOrderId: result.result.venueOrderId,
       state: result.result.state,
@@ -105,23 +97,10 @@ function existingOrderStore(store: OrderRepository, orderId: string): LiveOrderS
   };
 }
 
-async function rejectLiveOrder(input: {
-  auditStore: DecisionAuditRepository;
-  orderStore: OrderRepository;
-  auditId: string;
-  orderId: string;
-  status: ExecutionAuditResult['status'];
-  reason: string;
-}): Promise<ExecutionAuditResult> {
-  const executionResult: ExecutionAuditResult = {
-    venueOrderId: `failed:${input.auditId}`,
-    state: 'REJECTED',
-    status: input.status,
-    filledQuantity: 0,
-    processedAt: new Date(),
-    error: input.reason
-  };
-  await input.orderStore.recordTransition(input.orderId, 'REJECTED', input.reason);
-  await input.auditStore.markExecutionResult(input.auditId, executionResult);
-  return executionResult;
+function connectorForAudit(audit: DecisionAudit, config: ExecutionProcessorConfig): VenueConnector {
+  const source = audit.scannerData.source;
+  const connector = config.connectors?.[source] ?? config.connector;
+  if (!connector) throw new Error(`No venue connector configured for ${source}`);
+  if (connector.id !== source) throw new Error(`Configured connector ${connector.id} does not match audit venue ${source}`);
+  return connector;
 }

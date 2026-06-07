@@ -13,6 +13,13 @@ const ConfigObjectSchema = z.object({
   ENCRYPTION_KEY: z.string().min(32),
   POLYMARKET_GAMMA_URL: z.string().url().default('https://gamma-api.polymarket.com'),
   POLYMARKET_CLOB_URL: z.string().url().default('https://clob.polymarket.com'),
+  POLYMARKET_PRIVATE_KEY: z.string().optional(),
+  POLYMARKET_API_KEY: z.string().optional(),
+  POLYMARKET_SECRET: z.string().optional(),
+  POLYMARKET_PASSPHRASE: z.string().optional(),
+  POLYMARKET_FUNDER_ADDRESS: z.string().optional(),
+  POLYMARKET_SIGNATURE_TYPE: z.coerce.number().int().min(0).max(3).default(3),
+  POLYMARKET_CHAIN_ID: z.coerce.number().int().default(137),
   KALSHI_API_URL: z.string().url().default('https://api.elections.kalshi.com/trade-api/v2'),
   KALSHI_KEY_ID: z.string().optional(),
   KALSHI_PRIVATE_KEY: z.string().optional(),
@@ -44,6 +51,22 @@ export const ConfigSchema = ConfigObjectSchema.superRefine((value, ctx) => {
       message: 'KALSHI_PRIVATE_KEY must be a valid PEM private key'
     });
   }
+  const polymarketCredentialKeys = ['POLYMARKET_API_KEY', 'POLYMARKET_SECRET', 'POLYMARKET_PASSPHRASE'] as const;
+  const configuredPolymarketCredentialCount = polymarketCredentialKeys.filter((key) => Boolean(value[key])).length;
+  if (configuredPolymarketCredentialCount > 0 && configuredPolymarketCredentialCount < polymarketCredentialKeys.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['POLYMARKET_API_KEY'],
+      message: 'Polymarket L2 credentials require POLYMARKET_API_KEY, POLYMARKET_SECRET, and POLYMARKET_PASSPHRASE'
+    });
+  }
+  if (value.POLYMARKET_PRIVATE_KEY && !/^0x[0-9a-fA-F]{64}$/.test(value.POLYMARKET_PRIVATE_KEY)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['POLYMARKET_PRIVATE_KEY'],
+      message: 'POLYMARKET_PRIVATE_KEY must be a 0x-prefixed 32-byte private key'
+    });
+  }
 });
 
 export type RuntimeConfig = z.infer<typeof ConfigSchema>;
@@ -53,7 +76,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
   if (!parsed.success) {
     throw new Error(`Invalid runtime configuration: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   }
-  if (parsed.data.OPERATING_MODE === 'live' && (!parsed.data.KALSHI_KEY_ID || !parsed.data.KALSHI_PRIVATE_KEY)) {
+  const kalshiConfigured = Boolean(parsed.data.KALSHI_KEY_ID && parsed.data.KALSHI_PRIVATE_KEY);
+  const polymarketConfigured = Boolean(parsed.data.POLYMARKET_PRIVATE_KEY);
+  if (parsed.data.OPERATING_MODE === 'live' && !kalshiConfigured && !polymarketConfigured) {
     throw new Error('Live mode requires exchange credentials and explicit operator activation workflow.');
   }
   return parsed.data;
