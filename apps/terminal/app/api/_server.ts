@@ -30,21 +30,23 @@ export function jsonError(message: string, status = 500) {
 
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
+interface RateLimitResult { remaining: number; resetAt: number; }
+
 export async function requireApiAccess(request: Request, input: { tenantId: string; permission: string; apiScope?: string }) {
   enforceOriginPolicy(request);
   const apiKey = request.headers.get('x-api-key') ?? bearerToken(request.headers.get('authorization'));
   if (apiKey) {
     const apiClient = await new ApiKeyRepository(getDb()).validate({ tenantId: input.tenantId, rawKey: apiKey, requiredScope: input.apiScope ?? input.permission });
     if (!apiClient) throw new ApiAuthError('invalid API key or scope', 401);
-    await rateLimit(`api:${input.tenantId}:${apiClient.apiClientId}`, apiClient.rateLimitPerMinute);
-    return { actorId: apiClient.apiClientId, role: 'api_only' as const, tenantId: input.tenantId };
+    const rateLimitState = await rateLimit(`api:${input.tenantId}:${apiClient.apiClientId}`, apiClient.rateLimitPerMinute); // HARDENED: expose distributed rate-limit metadata to mutation routes.
+    return { actorId: apiClient.apiClientId, role: 'api_only' as const, tenantId: input.tenantId, rateLimit: rateLimitState };
   }
   if (!LOCAL_DEV_ROLE_HEADERS) throw new ApiAuthError('API key required', 401);
   const role = roleFromHeader(request.headers.get('x-polyshore-role'));
   if (!can(role, input.permission)) throw new ApiAuthError(`role ${role} lacks ${input.permission}`, 403);
   const actorId = request.headers.get('x-operator-id') ?? role;
-  await rateLimit(`operator:${input.tenantId}:${actorId}:${trustedClientIp(request)}`, DEFAULT_RATE_LIMIT_PER_MINUTE);
-  return { actorId, role, tenantId: input.tenantId };
+  const rateLimitState = await rateLimit(`operator:${input.tenantId}:${actorId}:${trustedClientIp(request)}`, DEFAULT_RATE_LIMIT_PER_MINUTE); // HARDENED: dev fallback rate-limit metadata mirrors Redis shape.
+  return { actorId, role, tenantId: input.tenantId, rateLimit: rateLimitState };
 }
 
 export class ApiAuthError extends Error {
@@ -67,7 +69,16 @@ export function securityHeaders(requestId = crypto.randomUUID()) {
   };
 }
 
-async function rateLimit(key: string, limitPerMinute: number) {
+export function rateLimitHeaders(rateLimitState?: RateLimitResult): HeadersInit {
+  return rateLimitState
+    ? {
+        'X-RateLimit-Remaining': String(rateLimitState.remaining), // HARDENED: mutation responses expose remaining request budget.
+        'X-RateLimit-Reset': String(rateLimitState.resetAt) // HARDENED: clients can back off before hard failure.
+      }
+    : {};
+}
+
+async function rateLimit(key: string, limitPerMinute: number): Promise<RateLimitResult> {
   const redisUrl = process.env.REDIS_URL;
   if (redisUrl) {
     try {
@@ -76,22 +87,25 @@ async function rateLimit(key: string, limitPerMinute: number) {
       const count = await client.incr(redisKey);
       if (count === 1) await client.expire(redisKey, 60);
       if (count > limitPerMinute) throw new ApiAuthError('rate limit exceeded', 429);
+      const ttl = await client.ttl(redisKey);
+      return { remaining: Math.max(0, limitPerMinute - count), resetAt: Math.floor(Date.now() / 1000) + Math.max(0, ttl) };
     } catch (error) {
       if (error instanceof ApiAuthError) throw error;
       redisClient = undefined;
       throw new ApiAuthError('rate limit backend unavailable', 503);
     }
-    return;
   }
   if (process.env.NODE_ENV === 'production') throw new ApiAuthError('rate limit backend unavailable', 503);
   const now = Date.now();
   const bucket = buckets.get(key);
   if (!bucket || bucket.resetAt <= now) {
-    buckets.set(key, { count: 1, resetAt: now + 60_000 });
-    return;
+    const resetAt = now + 60_000;
+    buckets.set(key, { count: 1, resetAt });
+    return { remaining: limitPerMinute - 1, resetAt: Math.floor(resetAt / 1000) };
   }
   bucket.count += 1;
   if (bucket.count > limitPerMinute) throw new ApiAuthError('rate limit exceeded', 429);
+  return { remaining: Math.max(0, limitPerMinute - bucket.count), resetAt: Math.floor(bucket.resetAt / 1000) };
 }
 
 async function getRedisClient(redisUrl: string): Promise<RedisClientType> {

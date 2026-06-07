@@ -48,7 +48,7 @@ export default function OpportunitiesPage() {
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
-  if (loading) return <div className={styles.loading}>Loading opportunities...</div>;
+  if (loading) return <PageSkeleton />; // HARDENED: first opportunity fetch shows a skeleton state.
   if (error) return <div className={styles.error}>Error: {error}</div>;
 
   return (
@@ -133,6 +133,15 @@ export default function OpportunitiesPage() {
           <p>No opportunities detected at this time</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function PageSkeleton() {
+  return (
+    <div className="skeletonPage">
+      <div className="skeletonHeader" />
+      <div className="skeletonGrid"><div className="skeletonCard" /><div className="skeletonCard" /><div className="skeletonCard" /></div>
     </div>
   );
 }

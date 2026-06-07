@@ -38,7 +38,7 @@ export default function Portfolio() {
     fetchData();
   }, []);
 
-  if (loading) return <div className={styles.loading}>Loading portfolio...</div>;
+  if (loading) return <PageSkeleton />; // HARDENED: first portfolio fetch shows a skeleton state.
   if (error) return <div className={styles.error}>Error: {error}</div>;
 
   const portfolio = data?.portfolio || { positions: [], totalExposure: 0, cash: 0, equity: 0 };
@@ -130,6 +130,16 @@ export default function Portfolio() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PageSkeleton() {
+  return (
+    <div className="skeletonPage">
+      <div className="skeletonHeader" />
+      <div className="skeletonGrid"><div className="skeletonCard" /><div className="skeletonCard" /><div className="skeletonCard" /></div>
+      <div className="skeletonWide" />
     </div>
   );
 }

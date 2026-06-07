@@ -1,6 +1,6 @@
 import { ReconciliationQuerySchema, ReconciliationUpdateSchema } from '@polyshore/api';
 import { PortfolioRepository, ReconciliationIncidentRepository } from '@polyshore/db';
-import { authError, getDb, requireApiAccess } from '../_server';
+import { authError, getDb, rateLimitHeaders, requireApiAccess } from '../_server';
 
 export async function GET(request: Request) {
   try {
@@ -30,7 +30,7 @@ export async function PATCH(request: Request) {
       ? await incidents.acknowledge({ tenantId: parsed.data.tenantId, actorId: actor.actorId, reason: parsed.data.reason })
       : await incidents.clear(parsed.data.tenantId, parsed.data.reason, actor.actorId);
     await portfolio.markSevereMismatch(parsed.data.tenantId, state.severeMismatchOpen);
-    return Response.json({ state });
+    return Response.json({ state }, { headers: rateLimitHeaders(actor.rateLimit) }); // HARDENED: mutation exposes rate-limit budget headers.
   } catch (error) {
     return authError(error);
   }

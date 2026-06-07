@@ -84,6 +84,9 @@ importers:
       '@polyshore/reports':
         specifier: workspace:*
         version: link:../../packages/reports
+      '@polyshore/risk':
+        specifier: workspace:*
+        version: link:../../packages/risk
 
   packages/alerts: {}
 

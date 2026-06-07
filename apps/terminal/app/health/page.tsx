@@ -49,7 +49,7 @@ export default function SystemHealth() {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) return <div className={styles.loading}>Loading system health...</div>;
+  if (loading) return <PageSkeleton />; // HARDENED: first health fetch shows a skeleton state.
   if (error) return <div className={styles.error}>Error: {error}</div>;
 
   const healthyCount = workers.filter((w) => w.status === 'ok').length;
@@ -193,6 +193,16 @@ export default function SystemHealth() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PageSkeleton() {
+  return (
+    <div className="skeletonPage">
+      <div className="skeletonHeader" />
+      <div className="skeletonGrid"><div className="skeletonCard" /><div className="skeletonCard" /><div className="skeletonCard" /></div>
+      <div className="skeletonWide" />
     </div>
   );
 }

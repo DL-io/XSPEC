@@ -3,15 +3,16 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 const nav = [
-  ['Mission Control', '/'],
-  ['Opportunity Feed', '/opportunities'],
+  ['Dashboard', '/'], // HARDENED: nav label matches the production route map.
+  ['Opportunities', '/opportunities'], // HARDENED: all terminal pages are reachable from the shell.
   ['Portfolio', '/portfolio'],
+  ['Audit', '/audit'],
   ['Performance', '/performance'],
-  ['Audit Explorer', '/audit'],
+  ['Reconciliation', '/reconciliation'], // HARDENED: reconciliation route was missing from global navigation.
   ['Configuration', '/configuration'],
   ['Playbooks', '/playbooks'],
-  ['System Health', '/health'],
-  ['Research Packs', '/research-packs']
+  ['Research Packs', '/research-packs'],
+  ['Health', '/health']
 ];
 
 export default function RootLayout({ children }: { children: ReactNode }) {

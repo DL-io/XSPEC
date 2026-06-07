@@ -110,6 +110,19 @@
   color: #f44336;
 }
 
+.staleBanner {
+  display: block;
+  margin: 0 24px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 152, 0, 0.35);
+  border-left: 4px solid #ff9800;
+  border-radius: 6px;
+  background: rgba(255, 152, 0, 0.1);
+  color: #5f3900;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* Main Grid */
 .mainGrid {
   display: grid;

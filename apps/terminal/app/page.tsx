@@ -64,7 +64,7 @@ export default function MissionControl() {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) return <div className={styles.loading}>Loading Mission Control...</div>;
+  if (loading) return <MissionControlSkeleton />; // HARDENED: first dashboard fetch shows a structured skeleton instead of a blank/text-only load.
   if (error) return <div className={styles.error}>Error: {error}</div>;
   if (!overview) return <div className={styles.empty}>No data available</div>;
 
@@ -78,9 +78,14 @@ export default function MissionControl() {
 
   const systemStatus = safety.killSwitchActive ? 'EMERGENCY' : reconciliation.severeMismatchOpen ? 'DEGRADED' : 'HEALTHY';
   const tradingMode = safety.liveAuthorized ? 'LIVE' : 'PAPER';
+  const latestAuditAt = latestTimestamp(overview.audits ?? []);
+  const staleData = latestAuditAt !== undefined && Date.now() - latestAuditAt > 300_000; // HARDENED: stale scanner output is surfaced before operators act on old data.
 
   return (
     <div className={styles.container}>
+      {staleData && (
+        <Link href="/health" className={styles.staleBanner}>⚠ Data may be stale — scanner worker may be inactive. Check System Health.</Link>
+      )}
       {/* Command Bar */}
       <div className={styles.commandBar}>
         <div className={styles.commandSection}>
@@ -305,4 +310,21 @@ export default function MissionControl() {
       </div>
     </div>
   );
+}
+
+function MissionControlSkeleton() {
+  return (
+    <div className="skeletonPage">
+      <div className="skeletonHeader" />
+      <div className="skeletonGrid"><div className="skeletonCard" /><div className="skeletonCard" /><div className="skeletonCard" /></div>
+      <div className="skeletonWide" />
+    </div>
+  );
+}
+
+function latestTimestamp(audits: Array<{ createdAt?: string | Date }>): number | undefined {
+  const times = audits
+    .map((audit) => audit.createdAt ? new Date(audit.createdAt).getTime() : Number.NaN)
+    .filter((time) => Number.isFinite(time));
+  return times.length ? Math.max(...times) : undefined;
 }

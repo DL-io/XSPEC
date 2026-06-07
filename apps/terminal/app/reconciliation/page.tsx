@@ -73,7 +73,7 @@ export default function ReconciliationCenter() {
     }
   };
 
-  if (loading) return <div className={styles.loading}>Loading reconciliation center...</div>;
+  if (loading) return <PageSkeleton />; // HARDENED: first reconciliation fetch shows a skeleton state.
   if (error) return <div className={styles.error}>Error: {error}</div>;
 
   const mismatchOpen = state?.severeMismatchOpen;
@@ -162,6 +162,16 @@ export default function ReconciliationCenter() {
           <li>Concurrent order modifications from multiple sources</li>
         </ul>
       </div>
+    </div>
+  );
+}
+
+function PageSkeleton() {
+  return (
+    <div className="skeletonPage">
+      <div className="skeletonHeader" />
+      <div className="skeletonCard" />
+      <div className="skeletonWide" />
     </div>
   );
 }

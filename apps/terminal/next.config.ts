@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@polyshore/api', '@polyshore/config', '@polyshore/auth', '@polyshore/observability'],
+  transpilePackages: ['@polyshore/api', '@polyshore/config', '@polyshore/auth', '@polyshore/observability', '@polyshore/risk'], // HARDENED: configuration page reads risk mandates from the canonical package.
   async headers() {
     return [
       {
