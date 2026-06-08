@@ -19,7 +19,12 @@ async function alertOnce() {
   logInfo('alert worker cycle complete', { alerts: alerts.length, sinks: sinks.length });
 }
 
-await loop('alert-worker', alertOnce);
+if (process.env.WORKER_ONCE === 'true') {
+  await alertOnce();
+  logInfo('alert worker one-shot complete', { mode: config.OPERATING_MODE });
+} else {
+  await loop('alert-worker', alertOnce);
+}
 
 async function loop(worker: string, run: () => Promise<void>) {
   let backoffMs = 1_000;

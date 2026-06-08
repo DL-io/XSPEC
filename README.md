@@ -67,11 +67,14 @@ pnpm check
 pnpm test
 pnpm build
 pnpm preflight
+pnpm validate-config
+pnpm smoke
 pnpm db:check
 pnpm db:migrate
 ```
 
 Run `pnpm db:migrate` only against the intended database. `pnpm db:push` is not defined in this repo.
+Use `WORKER_ONCE=true pnpm --filter <worker-package> start` to run a single worker cycle during deployment smoke tests.
 
 ## Safety Gates
 

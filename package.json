@@ -17,6 +17,7 @@
     "db:migrate": "./node_modules/.bin/drizzle-kit migrate --config drizzle.config.ts",
     "db:check": "./node_modules/.bin/vitest run packages/db/src/migrations.test.ts",
     "preflight": "./node_modules/.bin/tsx scripts/preflight.ts",
+    "smoke": "./node_modules/.bin/tsx scripts/smoke.ts",
     "seed": "./node_modules/.bin/tsx scripts/seed.ts",
     "simulate": "./node_modules/.bin/tsx scripts/simulate.ts",
     "validate-config": "./node_modules/.bin/tsx scripts/validate-config.ts"

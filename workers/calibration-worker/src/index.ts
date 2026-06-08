@@ -17,7 +17,12 @@ async function calibrationOnce() {
   logInfo('calibration worker cycle complete', { records: records.length });
 }
 
-await loop('calibration-worker', calibrationOnce);
+if (process.env.WORKER_ONCE === 'true') {
+  await calibrationOnce();
+  logInfo('calibration worker one-shot complete', { mode: config.OPERATING_MODE });
+} else {
+  await loop('calibration-worker', calibrationOnce);
+}
 
 function calibrationFromAudit(audit: DecisionAudit): CalibrationRecord | null {
   const backfill = audit.calibrationBackfill;

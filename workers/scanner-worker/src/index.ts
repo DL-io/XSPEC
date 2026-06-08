@@ -55,6 +55,10 @@ async function scanOnce() {
 }
 
 await scanOnce();
-setInterval(() => {
-  scanOnce().catch((error) => logInfo('scanner cycle failed', { error: error instanceof Error ? error.message : String(error) }));
-}, config.ACTIVE_MARKET_POLL_SECONDS * 1000);
+if (process.env.WORKER_ONCE === 'true') {
+  logInfo('scanner worker one-shot complete', { mode: config.OPERATING_MODE });
+} else {
+  setInterval(() => {
+    scanOnce().catch((error) => logInfo('scanner cycle failed', { error: error instanceof Error ? error.message : String(error) }));
+  }, config.ACTIVE_MARKET_POLL_SECONDS * 1000);
+}

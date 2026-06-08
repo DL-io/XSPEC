@@ -27,6 +27,10 @@ async function executeOnce() {
 
 logInfo('execution worker ready', { mode: config.OPERATING_MODE });
 await executeOnce();
-setInterval(() => {
-  executeOnce().catch((error) => logInfo('execution cycle failed', { error: error instanceof Error ? error.message : String(error) }));
-}, 5_000);
+if (process.env.WORKER_ONCE === 'true') {
+  logInfo('execution worker one-shot complete', { mode: config.OPERATING_MODE });
+} else {
+  setInterval(() => {
+    executeOnce().catch((error) => logInfo('execution cycle failed', { error: error instanceof Error ? error.message : String(error) }));
+  }, 5_000);
+}

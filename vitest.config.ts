@@ -32,6 +32,7 @@ function workspaceAliases() {
 
 export default defineConfig({
   test: {
+    pool: 'forks',
     include: [
       'packages/**/*.test.ts',
       'packages/**/*.integration.test.ts',

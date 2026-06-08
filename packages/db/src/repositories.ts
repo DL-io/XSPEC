@@ -11,7 +11,7 @@ export interface ConfigOverrideRecord { id: string; tenantId: string; key: strin
 export interface MarketMemoryRecord extends MemoryMatch { id: string; embedding: unknown; createdAt: Date; }
 export type AuditEventType = 'execution_result' | 'reconciliation_status';
 export interface AuditEventRecord { id: string; auditId: string; tenantId: string; marketId: string; type: AuditEventType; payload: unknown; createdAt: Date; }
-export interface LocalOrderReconciliationRecord { venueOrderId: string; state: string; filledQuantity: number; averagePrice?: number; }
+export interface LocalOrderReconciliationRecord { venueOrderId: string; marketId: string; state: string; filledQuantity: number; averagePrice?: number; }
 export interface ReconciliationIncidentRecord { id: string; tenantId: string; report: unknown; acknowledgedAt?: Date; acknowledgedBy?: string; acknowledgmentReason?: string; clearedAt?: Date; clearReason?: string; createdAt: Date; updatedAt: Date; }
 export interface ReconciliationState { tenantId: string; severeMismatchOpen: boolean; incident?: ReconciliationIncidentRecord; acknowledged: boolean; }
 export interface WorkerHealthRecord { worker: string; status: 'ok' | 'error'; lastHeartbeatAt: Date; lastSuccessAt?: Date; lastError?: string; metadata?: Record<string, unknown>; }
@@ -558,6 +558,7 @@ export class OrderRepository implements LiveOrderStore {
       .filter((row) => typeof row.venueOrderId === 'string' && row.venueOrderId.length > 0)
       .map((row) => ({
         venueOrderId: row.venueOrderId as string,
+        marketId: row.marketId,
         state: row.state,
         filledQuantity: filledQuantityFromOrderState(row.state, row.quantity),
         averagePrice: row.limitPrice

@@ -1,6 +1,6 @@
 import type { AlertEvent, PortfolioState, ReconciliationAuditStatus, ReconciliationSeverity, VenueConnector } from '@polyshore/core';
 
-export interface LocalOrderReconciliationItem { venueOrderId: string; state: string; filledQuantity: number; averagePrice?: number; }
+export interface LocalOrderReconciliationItem { venueOrderId: string; marketId: string; state: string; filledQuantity: number; averagePrice?: number; }
 export interface LocalFillReconciliationItem { orderId: string; marketId: string; quantity: number; price: number; }
 export interface ReconciliationInput {
   localOrders?: LocalOrderReconciliationItem[];

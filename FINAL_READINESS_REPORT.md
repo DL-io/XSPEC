@@ -2,79 +2,103 @@
 
 ## Scope
 
-Target repo: `poly:KELSHI omega-x-spec`
-Branch: `main`
-Remote: `https://github.com/DL-io/XSPEC.git`
+- Target repo: `/Users/jessewinters/Desktop/poly:KELSHI omega-x-spec`
+- Branch verified: `main`
+- Remote verified: `https://github.com/DL-io/XSPEC.git`
+- HEAD at verification start: `b1a16c1 Harden XSPEC operational readiness`
+- Stash state: empty
 
-## Completed In This Pass
+## Completed Modules
 
-- Preserved prior dirty XSPEC work in `stash@{0}` before applying selected changes.
-- Applied research provider configuration and health wiring.
-- Added `TAVILY_API_KEY` and `RESEARCH_PROVIDERS_REQUIRED` typed config.
-- Added research provider health to `/api/health`.
-- Added real Tavily/OpenAI/Anthropic provider adapters with timeouts, retries, probes, and zod validation of LLM reasoning output.
-- Changed malformed or unavailable research providers to degrade/skip instead of emitting fabricated intelligence.
-- Changed Polymarket Gamma discovery so Gamma is metadata-only; executable bid/ask must come from CLOB orderbook enrichment.
-- Added scanner rejection for malformed Polymarket token IDs, missing resolution criteria, missing executable top-of-book depth, stale orderbooks, wide spreads, and thin liquidity.
-- Renamed accepted execution lifecycle state to `ACCEPTED_BY_CLOB`.
-- Added risk checks for stale market data, model disagreement, and max order size while keeping the 16-gate order.
-- Added model estimate zod validation so malformed ensemble inputs skip.
-- Updated Mission Control readiness docs to stop claiming live production readiness.
-- Pinned Next `outputFileTracingRoot` to the repo root to avoid cross-repo lockfile inference.
+- Polymarket market discovery uses Gamma as metadata and requires CLOB orderbook enrichment before a market can pass scanner gates.
+- Scanner gates reject stale orderbooks, wide spreads, thin liquidity, malformed Polymarket token IDs, ambiguous or missing resolution criteria, inactive markets, and missing executable bid/ask prices.
+- Research providers produce typed dossiers with provider health checks and zod validation. Malformed provider output skips instead of fabricating intelligence.
+- Probability, model, scanner, risk, execution, venue, API, DB migration, Redis coordination, and reconciliation paths are covered by the current test suite.
+- Risk gates remain hard gates and include edge, confidence, spread, liquidity participation, stale data, disagreement, sizing, exposure, daily loss, drawdown, kill switch, live authorization, reconciliation, and open-order controls.
+- Paper execution is bid/ask aware and persists realistic order lifecycle states.
+- Live execution path uses `@polymarket/clob-client-v2`, viem signer setup, signed GTC limit orders, L2 credentials, pre-submit balance/allowance checks, venue order ID persistence before `ACCEPTED_BY_CLOB`, and fail-closed live readiness checks.
+- Reconciliation core compares local and remote balances, cash, exposure, positions, open-order counts, order state/fills, and invalid local fill records.
+- Reconciliation worker now runs venue-specific reconciliation for Kalshi and Polymarket instead of Kalshi only.
+- Worker entrypoints now support `WORKER_ONCE=true` for production smoke cycles against configured dependencies.
+- Production smoke script added as `pnpm smoke`.
+- Vitest is configured with `pool: 'forks'`, so vanilla `pnpm check` uses the previously proven stable pool without a manual flag.
 
 ## Verification Commands
 
-- `pnpm check`: PASS
-  - 12 test files passed.
-  - 64 tests passed.
-- `pnpm install --no-frozen-lockfile`: PASS
-  - Updated lockfile for workspace dependency consistency.
 - `pnpm install --frozen-lockfile`: PASS
+  - Lockfile was current; all 27 workspace projects installed.
+- `pnpm lint`: PASS
+  - `tsc -b --noEmit` completed.
+- `pnpm check`: PASS
+  - 15 test files passed.
+  - 77 tests passed.
 - `pnpm db:check`: PASS
   - 1 migration test file passed.
   - 2 tests passed.
 - `DATABASE_URL=mysql://user:password@localhost:3306/polyshore REDIS_URL=redis://localhost:6379 SESSION_SECRET=abcdefghijklmnopqrstuvwxyz123456 ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456 pnpm preflight`: PASS
-  - Paper mode config validation passed.
+  - Paper mode passed.
   - 16 risk gates exposed.
+  - Live readiness correctly reported `ready: false`.
+- `DATABASE_URL=mysql://user:password@localhost:3306/polyshore REDIS_URL=redis://localhost:6379 SESSION_SECRET=abcdefghijklmnopqrstuvwxyz123456 ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456 KALSHI_KEY_ID= KALSHI_PRIVATE_KEY= pnpm validate-config`: PASS
+  - Config validated in paper mode.
+  - Live readiness correctly reported missing live controls and Polymarket credentials.
+- `pnpm validate-config`: FAIL in this local checkout only
+  - The gitignored local `.env` contains a malformed `KALSHI_PRIVATE_KEY`.
+  - The tracked repo was not changed to hide or overwrite that secret.
 - `pnpm build`: PASS
   - Typecheck passed.
   - Next production build passed.
-  - 23 app routes generated.
+  - 24 app routes generated.
+- `SMOKE_START_SERVER=true PORT=56550 DATABASE_URL=mysql://user:password@localhost:3306/polyshore REDIS_URL=redis://localhost:6379 SESSION_SECRET=abcdefghijklmnopqrstuvwxyz123456 ENCRYPTION_KEY=abcdefghijklmnopqrstuvwxyz123456 KALSHI_KEY_ID= KALSHI_PRIVATE_KEY= pnpm smoke`: PASS
+  - Config validation step passed.
+  - Built production terminal started on `http://127.0.0.1:56550`.
+  - `/api/health` returned `{"status":"ok"}`.
 
 ## Not Run
 
 - `pnpm db:migrate`: not run because no safe real `DATABASE_URL` was provided.
-- Live CLOB order submission: not run because live Polymarket signing adapter, funded wallet, CLOB credentials, allowances, and operator live authorization are not proven.
-- Runtime smoke against a started production server: not run because the health route requires real database and Redis dependencies; no safe production-like dependency endpoints were provided.
-- 72-hour paper validation: not run in this coding session.
+- `pnpm db:push`: not run and not defined in this repo.
+- Worker smoke with `SMOKE_WORKERS=true`: not run because no confirmed reachable real MySQL/TiDB and Redis dependency set was provided for worker cycles.
+- Live CLOB order submission: not run because real funded wallet, live Polymarket credentials, allowances, operator authorization, and reconciliation proof were not supplied.
+- 72-hour paper validation window: not run in this coding session.
 
 ## Live Trading Readiness
 
 NOT READY.
 
-Objective blockers:
-
-- Polymarket live order signing remains fail-closed.
-- `@polymarket/clob-client-v2` and viem signer flow are not installed/proven in this repo.
-- L2 credential derivation/cache and encrypted live credential cache are not proven.
-- USDC/CTF allowance checks before live submission are not implemented/proven.
-- Exchange fill synchronization for Polymarket live trades is not proven.
-- Continuous reconciliation cannot compare full CLOB fill history because the venue interface does not expose a fill-history fetch method.
-- No real funded wallet, CLOB credentials, `DATABASE_URL`, Redis, or live operator authorization was supplied for verification.
+Objective reason: live code paths are implemented as fail-closed, but this environment has not proven real Polymarket credentials, funded wallet/proxy, CLOB balance/allowance, live operator authorization, migrations against the target DB, Redis reachability, worker heartbeats, venue reconciliation, or a live dry-run against the intended deployment.
 
 ## Paper Trading Readiness
 
-READY FOR TESTED PAPER EXECUTION PATH.
+READY for the tested paper execution path.
 
-Limits:
+Objective reason: install, typecheck, full tests, DB migration checks, paper preflight, production build, and terminal health smoke all passed. Paper mode remains labeled as paper and is not proof of live readiness.
 
-- Paper execution is bid/ask-aware and lifecycle-tested.
-- Paper mode has not completed the canonical 72-hour validation window.
-- Paper results depend on scanner/research/database workers being run with real database and provider configuration.
+## External Prerequisites Before Live Activation
 
-## Remaining Limitations
+- Provide valid production `DATABASE_URL` and run `pnpm db:migrate`.
+- Provide reachable production `REDIS_URL`.
+- Provide valid `SESSION_SECRET` and `ENCRYPTION_KEY`.
+- Provide Polymarket private key, L2 credentials, funder/proxy details if required, and funded wallet balances.
+- Verify CLOB balance and allowance checks pass.
+- Set `LIVE_TRADING_ENABLED=true`, `KILLSWITCH_ARMED=true`, and `OPERATING_MODE=live` only after all readiness checks pass.
+- Run `SMOKE_RUN_LOCAL_CHECKS=true SMOKE_START_SERVER=true SMOKE_WORKERS=true pnpm smoke` against the target environment.
+- Confirm dashboard/API reconciliation status is ok and no severe mismatch blocks new orders.
 
-- Full Polymarket live trading requires a real CLOB signing adapter and allowance checks.
-- Live readiness must remain fail-closed until all credentials, reconciliation, kill-switch, and operator gates pass.
-- Database migrations are generated and tested structurally, but not applied to a real TiDB/MySQL instance in this session.
-- Provider health is wired, but real Tavily/OpenAI/Anthropic probes require real API keys.
+## Deployment Command Sequence
+
+```bash
+pnpm install --frozen-lockfile
+pnpm check
+pnpm db:check
+pnpm build
+pnpm validate-config
+pnpm db:migrate
+pnpm --filter @polyshore/terminal start
+pnpm --filter @polyshore/scanner-worker start
+pnpm --filter @polyshore/research-worker start
+pnpm --filter @polyshore/execution-worker start
+pnpm --filter @polyshore/reconciliation-worker start
+pnpm --filter @polyshore/alert-worker start
+pnpm --filter @polyshore/calibration-worker start
+```

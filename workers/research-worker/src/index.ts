@@ -26,7 +26,12 @@ async function researchOnce() {
   logInfo('research worker cycle complete', { dossiers: dossiers.length, providerHealth });
 }
 
-await loop('research-worker', researchOnce);
+if (process.env.WORKER_ONCE === 'true') {
+  await researchOnce();
+  logInfo('research worker one-shot complete', { mode: config.OPERATING_MODE });
+} else {
+  await loop('research-worker', researchOnce);
+}
 
 async function loop(worker: string, run: () => Promise<void>) {
   let backoffMs = 1_000;
