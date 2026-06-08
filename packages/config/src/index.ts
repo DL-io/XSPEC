@@ -31,6 +31,7 @@ const ConfigObjectSchema = z.object({
   RESEARCH_PROVIDERS_REQUIRED: z.coerce.boolean().default(false),
   GROQ_API_KEY: z.string().optional(),
   OLLAMA_BASE_URL: z.string().url().optional(),
+  OLLAMA_MODEL: z.string().min(1).default('gpt-oss:120b'),
   STRICT_RESOLUTION_MODE: z.coerce.boolean().default(true),
   WATCHLIST_POLL_SECONDS: z.coerce.number().int().positive().default(5),
   ACTIVE_MARKET_POLL_SECONDS: z.coerce.number().int().positive().default(15),

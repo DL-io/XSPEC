@@ -25,7 +25,7 @@ export interface WebResearchProvider {
 }
 
 export interface LlmReasoningProvider {
-  id: 'openai' | 'anthropic' | string;
+  id: 'ollama' | 'openai' | 'anthropic' | string;
   reason(market: NormalizedMarket, facts: MarketDossier['currentFacts']): Promise<Partial<MarketDossier>>;
   probe?(): Promise<void>;
 }
@@ -35,6 +35,8 @@ export interface ResearchProviderConfig {
   ANTHROPIC_API_KEY?: string;
   TAVILY_API_KEY?: string;
   RESEARCH_PROVIDERS_REQUIRED?: boolean;
+  OLLAMA_BASE_URL?: string;
+  OLLAMA_MODEL?: string;
 }
 
 const ReasoningSchema = z.object({
@@ -128,6 +130,46 @@ export class OpenAIReasoningProvider implements LlmReasoningProvider {
   }
 }
 
+export class OllamaReasoningProvider implements LlmReasoningProvider {
+  id = 'ollama' as const;
+  constructor(private readonly baseUrl: string, private readonly model = 'gpt-oss:120b') {}
+
+  async reason(market: NormalizedMarket, facts: MarketDossier['currentFacts']): Promise<Partial<MarketDossier>> {
+    const payload = await requestJsonWithRetry(`${this.baseUrl.replace(/\/$/, '')}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: this.model,
+        stream: false,
+        format: 'json',
+        messages: [
+          { role: 'system', content: providerSystemPrompt },
+          { role: 'user', content: JSON.stringify(reasoningInput(market, facts)) }
+        ],
+        options: { temperature: 0.1, num_ctx: 32768 }
+      }),
+      timeoutMs: 60_000
+    });
+    return parseReasoning(JSON.parse(extractOllamaText(payload)));
+  }
+
+  async probe(): Promise<void> {
+    await requestJsonWithRetry(`${this.baseUrl.replace(/\/$/, '')}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: this.model,
+        stream: false,
+        format: 'json',
+        messages: [{ role: 'user', content: 'Return {"ok":true} as JSON.' }],
+        options: { temperature: 0, num_ctx: 2048 }
+      }),
+      timeoutMs: 20_000,
+      retries: 0
+    });
+  }
+}
+
 export class AnthropicReasoningProvider implements LlmReasoningProvider {
   id = 'anthropic' as const;
   constructor(private readonly apiKey: string, private readonly model = 'claude-3-5-sonnet-latest') {}
@@ -163,7 +205,13 @@ export class AnthropicReasoningProvider implements LlmReasoningProvider {
 export function configuredResearchProviders(config: ResearchProviderConfig): { webProvider?: WebResearchProvider; reasoningProvider?: LlmReasoningProvider } {
   return {
     webProvider: config.TAVILY_API_KEY ? new TavilyWebResearchProvider(config.TAVILY_API_KEY) : undefined,
-    reasoningProvider: config.OPENAI_API_KEY ? new OpenAIReasoningProvider(config.OPENAI_API_KEY) : config.ANTHROPIC_API_KEY ? new AnthropicReasoningProvider(config.ANTHROPIC_API_KEY) : undefined
+    reasoningProvider: config.OLLAMA_BASE_URL
+      ? new OllamaReasoningProvider(config.OLLAMA_BASE_URL, config.OLLAMA_MODEL)
+      : config.OPENAI_API_KEY
+        ? new OpenAIReasoningProvider(config.OPENAI_API_KEY)
+        : config.ANTHROPIC_API_KEY
+          ? new AnthropicReasoningProvider(config.ANTHROPIC_API_KEY)
+          : undefined
   };
 }
 
@@ -227,6 +275,12 @@ function extractOpenAIJson(payload: unknown): unknown {
   const text = output.output?.flatMap((item) => item.content ?? []).map((content) => content.text).find(Boolean);
   if (!text) throw new Error('OpenAI response did not include JSON text output');
   return JSON.parse(text);
+}
+
+function extractOllamaText(payload: unknown): string {
+  const text = (payload as { message?: { content?: string }; response?: string }).message?.content ?? (payload as { response?: string }).response;
+  if (!text) throw new Error('Ollama response did not include message content');
+  return text;
 }
 
 function reasoningInput(market: NormalizedMarket, facts: MarketDossier['currentFacts']) {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MarketDossier, NormalizedMarket } from '@polyshore/core';
 import { buildDossier, createResearchStages, defaultResearchStages } from './index';
-import { checkResearchProviderHealth, requestJsonWithRetry, type LlmReasoningProvider, type WebResearchProvider } from './providers';
+import { checkResearchProviderHealth, configuredResearchProviders, OllamaReasoningProvider, requestJsonWithRetry, type LlmReasoningProvider, type WebResearchProvider } from './providers';
 
 describe('research provider stages', () => {
   it('does not emit fabricated research when providers are missing', async () => {
@@ -59,6 +59,42 @@ describe('research provider stages', () => {
     expect(optional.map((item) => item.status)).toEqual(['DEGRADED', 'DEGRADED']);
     expect(required.map((item) => item.status)).toEqual(['FAILED', 'FAILED']);
     expect(configured.map((item) => item.status)).toEqual(['HEALTHY', 'HEALTHY']);
+  });
+
+  it('prefers Ollama as the configured reasoning provider', () => {
+    const providers = configuredResearchProviders({
+      OLLAMA_BASE_URL: 'http://127.0.0.1:11434',
+      OLLAMA_MODEL: 'gpt-oss:120b',
+      OPENAI_API_KEY: 'openai-key'
+    });
+
+    expect(providers.reasoningProvider?.id).toBe('ollama');
+  });
+
+  it('validates Ollama reasoning JSON before returning dossier fields', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      message: {
+        content: JSON.stringify({
+          probabilityEstimate: 0.61,
+          probabilityLow: 0.54,
+          probabilityHigh: 0.7,
+          confidence: 0.76,
+          evidenceStrength: 0.72,
+          contraryCase: 'The market may already include the major public facts.',
+          steelmanRebuttal: 'Orderbook pricing still appears too low given source-backed catalysts.',
+          identifiedBlindSpots: ['late liquidity shift']
+        })
+      }
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const result = await new OllamaReasoningProvider('http://127.0.0.1:11434', 'gpt-oss:120b').reason(marketFixture(), []);
+
+    expect(result).toMatchObject({ probabilityEstimate: 0.61, confidence: 0.76 });
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:11434/api/chat', expect.objectContaining({
+      method: 'POST',
+      body: expect.stringContaining('"model":"gpt-oss:120b"')
+    }));
+    fetchMock.mockRestore();
   });
 
   it('retries retryable provider failures', async () => {

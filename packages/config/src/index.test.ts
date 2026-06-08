@@ -74,11 +74,13 @@ describe('runtime config Kalshi credentials', () => {
   });
 
   it('accepts configured research provider keys', () => {
-    const config = loadConfig(baseEnv({ OPENAI_API_KEY: 'openai-key', TAVILY_API_KEY: 'tavily-key', RESEARCH_PROVIDERS_REQUIRED: 'true' }));
+    const config = loadConfig(baseEnv({ OPENAI_API_KEY: 'openai-key', TAVILY_API_KEY: 'tavily-key', RESEARCH_PROVIDERS_REQUIRED: 'true', OLLAMA_BASE_URL: 'http://127.0.0.1:11434', OLLAMA_MODEL: 'gpt-oss:120b' }));
 
     expect(config.OPENAI_API_KEY).toBe('openai-key');
     expect(config.TAVILY_API_KEY).toBe('tavily-key');
     expect(config.RESEARCH_PROVIDERS_REQUIRED).toBe(true);
+    expect(config.OLLAMA_BASE_URL).toBe('http://127.0.0.1:11434');
+    expect(config.OLLAMA_MODEL).toBe('gpt-oss:120b');
   });
 });
 

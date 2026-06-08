@@ -22,6 +22,7 @@
 - Worker entrypoints now support `WORKER_ONCE=true` for production smoke cycles against configured dependencies.
 - Production smoke script added as `pnpm smoke`.
 - Vitest is configured with `pool: 'forks'`, so vanilla `pnpm check` uses the previously proven stable pool without a manual flag.
+- Ollama is supported as the preferred local reasoning provider when `OLLAMA_BASE_URL` is configured. The default model is `gpt-oss:120b`.
 
 ## Verification Commands
 
@@ -31,7 +32,7 @@
   - `tsc -b --noEmit` completed.
 - `pnpm check`: PASS
   - 15 test files passed.
-  - 77 tests passed.
+  - 79 tests passed.
 - `pnpm db:check`: PASS
   - 1 migration test file passed.
   - 2 tests passed.

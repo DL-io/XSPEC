@@ -37,6 +37,13 @@ Required base keys:
 - `SESSION_SECRET`
 - `ENCRYPTION_KEY`
 
+Local reasoning can use Ollama:
+
+- `OLLAMA_BASE_URL`, usually `http://127.0.0.1:11434`
+- `OLLAMA_MODEL`, default `gpt-oss:120b`
+
+When `OLLAMA_BASE_URL` is set, Ollama is preferred over hosted OpenAI or Anthropic reasoning providers. `gpt-oss:120b` is the highest-capacity default and requires substantial local or external model storage/compute. Use a smaller model value when the machine cannot run it.
+
 Live Polymarket execution additionally requires:
 
 - `LIVE_TRADING_ENABLED=true`

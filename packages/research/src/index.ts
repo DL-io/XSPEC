@@ -1,6 +1,6 @@
 import type { MarketDossier, NormalizedMarket, StageFailure } from '@polyshore/core';
 import { resolutionAmbiguityScore } from '@polyshore/scanner';
-import { AnthropicReasoningProvider, OpenAIReasoningProvider, TavilyWebResearchProvider, type LlmReasoningProvider, type WebResearchProvider } from './providers';
+import { configuredResearchProviders, type LlmReasoningProvider, type WebResearchProvider } from './providers';
 export * from './providers';
 
 export type ResearchStage = (market: NormalizedMarket) => Promise<Partial<MarketDossier>>;
@@ -9,6 +9,8 @@ export interface ResearchProviderConfig {
   ANTHROPIC_API_KEY?: string;
   TAVILY_API_KEY?: string;
   RESEARCH_PROVIDERS_REQUIRED?: boolean;
+  OLLAMA_BASE_URL?: string;
+  OLLAMA_MODEL?: string;
 }
 
 export const REQUIRED_RESEARCH_STAGES = [
@@ -86,10 +88,7 @@ export function createResearchStages(input: { webProvider?: WebResearchProvider;
 }
 
 export function createResearchStagesFromConfig(config: ResearchProviderConfig): Record<string, ResearchStage> {
-  return createResearchStages({
-    webProvider: config.TAVILY_API_KEY ? new TavilyWebResearchProvider(config.TAVILY_API_KEY) : undefined,
-    reasoningProvider: config.OPENAI_API_KEY ? new OpenAIReasoningProvider(config.OPENAI_API_KEY) : config.ANTHROPIC_API_KEY ? new AnthropicReasoningProvider(config.ANTHROPIC_API_KEY) : undefined
-  });
+  return createResearchStages(configuredResearchProviders(config));
 }
 
 export async function buildDossier(market: NormalizedMarket, stages: Record<string, ResearchStage>, timeoutMs = 45_000): Promise<MarketDossier> {
