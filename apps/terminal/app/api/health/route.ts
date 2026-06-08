@@ -1,6 +1,7 @@
 import { loadConfig } from '@polyshore/config';
 import { WorkerHealthRepository } from '@polyshore/db';
 import { checkRedisHealth } from '@polyshore/observability';
+import { checkResearchProviderHealth } from '@polyshore/research';
 import { authError, getDb, requireApiAccess } from '../_server';
 
 export async function GET(request: Request) {
@@ -10,11 +11,12 @@ export async function GET(request: Request) {
     if (!tenantId) return Response.json({ status: 'ok' });
     await requireApiAccess(request, { tenantId, permission: 'read', apiScope: 'api:read' });
     const config = loadConfig();
-    const [workers, redis] = await Promise.all([
+    const [workers, redis, researchProviders] = await Promise.all([
       new WorkerHealthRepository(getDb()).latest(),
-      checkRedisHealth(config.REDIS_URL)
+      checkRedisHealth(config.REDIS_URL),
+      checkResearchProviderHealth(config, false)
     ]);
-    return Response.json({ workers, dependencies: [redis] });
+    return Response.json({ workers, dependencies: [redis, ...researchProviders] });
   } catch (error) {
     return authError(error);
   }

@@ -1,8 +1,15 @@
 import type { MarketDossier, NormalizedMarket, StageFailure } from '@polyshore/core';
 import { resolutionAmbiguityScore } from '@polyshore/scanner';
+import { AnthropicReasoningProvider, OpenAIReasoningProvider, TavilyWebResearchProvider, type LlmReasoningProvider, type WebResearchProvider } from './providers';
 export * from './providers';
 
 export type ResearchStage = (market: NormalizedMarket) => Promise<Partial<MarketDossier>>;
+export interface ResearchProviderConfig {
+  OPENAI_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
+  TAVILY_API_KEY?: string;
+  RESEARCH_PROVIDERS_REQUIRED?: boolean;
+}
 
 export const REQUIRED_RESEARCH_STAGES = [
   'resolution_parser',
@@ -21,37 +28,68 @@ export function assertRequiredStages(stages: Record<string, ResearchStage>): voi
 }
 
 export function defaultResearchStages(): Record<string, ResearchStage> {
+  return degradedResearchStages('research providers unavailable');
+}
+
+export function degradedResearchStages(reason: string): Record<string, ResearchStage> {
+  return {
+    resolution_parser: async (market) => ({
+      resolutionClarified: market.resolutionCriteria,
+      resolutionAmbiguityScore: resolutionAmbiguityScore(market.resolutionCriteria),
+      keyResolutionRisks: market.hasAmbiguousResolution ? ['scanner flagged ambiguous resolution'] : [],
+      skipRecommended: true,
+      skipReason: reason
+    }),
+    web_research: async () => unavailable('web_research', reason),
+    base_rate_calculator: async () => unavailable('base_rate_calculator', reason),
+    sentiment_analyzer: async () => unavailable('sentiment_analyzer', reason),
+    microstructure_analyzer: async () => unavailable('microstructure_analyzer', reason),
+    catalyst_forecaster: async () => unavailable('catalyst_forecaster', reason),
+    memory_matcher: async () => unavailable('memory_matcher', reason),
+    deep_reasoner: async () => unavailable('deep_reasoner', reason)
+  };
+}
+
+export function createResearchStages(input: { webProvider?: WebResearchProvider; reasoningProvider?: LlmReasoningProvider }): Record<string, ResearchStage> {
+  if (!input.webProvider || !input.reasoningProvider) return degradedResearchStages('research providers unavailable');
+  let facts: MarketDossier['currentFacts'] = [];
   return {
     resolution_parser: async (market) => ({
       resolutionClarified: market.resolutionCriteria,
       resolutionAmbiguityScore: resolutionAmbiguityScore(market.resolutionCriteria),
       keyResolutionRisks: market.hasAmbiguousResolution ? ['scanner flagged ambiguous resolution'] : []
     }),
-    web_research: async (market) => ({
-      currentFacts: [{ claim: market.question, source: market.source, capturedAt: new Date() }],
-      sourceCount: 1,
-      sourceQuality: 0.45,
-      informationAge: market.dataFreshnessMs
-    }),
+    web_research: async (market) => {
+      const result = await input.webProvider?.research(market);
+      facts = result?.facts ?? [];
+      return {
+        currentFacts: facts,
+        contradictions: result?.contradictions ?? [],
+        sourceCount: result?.sourceCount ?? facts.length,
+        sourceQuality: result?.sourceQuality ?? 0,
+        informationAge: result?.informationAge ?? market.dataFreshnessMs
+      };
+    },
     base_rate_calculator: async (market) => ({ baseRate: market.midpoint }),
     sentiment_analyzer: async () => ({ sentimentSignal: 0 }),
     microstructure_analyzer: async (market) => ({ microstructureSignal: market.bidDepth1Pct - market.askDepth1Pct }),
     catalyst_forecaster: async (market) => ({
       catalysts: market.tags,
-      keyDrivers: [market.category].filter(Boolean)
+      keyDrivers: [market.category, ...facts.slice(0, 3).map((fact) => fact.claim)].filter(Boolean)
     }),
     memory_matcher: async () => ({ marketMemoryMatches: [] }),
-    deep_reasoner: async (market) => ({
-      probabilityEstimate: market.midpoint,
-      probabilityLow: Math.max(0.01, market.midpoint - 0.08),
-      probabilityHigh: Math.min(0.99, market.midpoint + 0.08),
-      confidence: 0.72,
-      evidenceStrength: 0.7,
-      contraryCase: 'Market price may already reflect available public information.',
-      steelmanRebuttal: 'Trade only proceeds when ensemble edge and risk gates approve.',
-      identifiedBlindSpots: []
-    })
+    deep_reasoner: async (market) => {
+      const reasoning = await input.reasoningProvider?.reason(market, facts);
+      return reasoning ?? {};
+    }
   };
+}
+
+export function createResearchStagesFromConfig(config: ResearchProviderConfig): Record<string, ResearchStage> {
+  return createResearchStages({
+    webProvider: config.TAVILY_API_KEY ? new TavilyWebResearchProvider(config.TAVILY_API_KEY) : undefined,
+    reasoningProvider: config.OPENAI_API_KEY ? new OpenAIReasoningProvider(config.OPENAI_API_KEY) : config.ANTHROPIC_API_KEY ? new AnthropicReasoningProvider(config.ANTHROPIC_API_KEY) : undefined
+  });
 }
 
 export async function buildDossier(market: NormalizedMarket, stages: Record<string, ResearchStage>, timeoutMs = 45_000): Promise<MarketDossier> {
@@ -102,7 +140,15 @@ export async function buildDossier(market: NormalizedMarket, stages: Record<stri
     marketMemoryMatches: partial.marketMemoryMatches ?? [],
     stagesCompleted,
     stageFailures,
-    skipRecommended: stageFailures.length > 3 || ambiguity >= 0.4,
-    skipReason: stageFailures.length > 3 ? 'excessive research stage failures' : ambiguity >= 0.4 ? 'resolution ambiguity threshold exceeded' : undefined
+    skipRecommended: partial.skipRecommended ?? (hasCriticalResearchFailure(stageFailures) || stageFailures.length > 3 || ambiguity >= 0.4),
+    skipReason: partial.skipReason ?? (hasCriticalResearchFailure(stageFailures) ? 'critical research provider unavailable' : stageFailures.length > 3 ? 'excessive research stage failures' : ambiguity >= 0.4 ? 'resolution ambiguity threshold exceeded' : undefined)
   };
+}
+
+function unavailable(stage: string, reason: string): never {
+  throw new Error(`${stage} unavailable: ${reason}`);
+}
+
+function hasCriticalResearchFailure(failures: StageFailure[]): boolean {
+  return failures.some((failure) => failure.stage === 'web_research' || failure.stage === 'deep_reasoner');
 }

@@ -3,6 +3,7 @@ import { ConfigOverrideRepository, createDb, MarketRepository, PortfolioReposito
 import { PolymarketConnector, KalshiConnector } from '@polyshore/venues';
 import { applyOrderbookSnapshot, evaluateScannerGates } from '@polyshore/scanner';
 import { logInfo } from '@polyshore/observability';
+import { createResearchStagesFromConfig } from '@polyshore/research';
 import { evaluateMarketPipeline } from './pipeline';
 
 const config = loadConfig();
@@ -11,6 +12,7 @@ const db = createDb(config.DATABASE_URL);
 const marketRepository = new MarketRepository(db);
 const portfolioRepository = new PortfolioRepository(db);
 const safetyRepository = new ConfigOverrideRepository(db);
+const researchStages = createResearchStagesFromConfig(config);
 const connectors = [
   new PolymarketConnector(config.POLYMARKET_GAMMA_URL, config.POLYMARKET_CLOB_URL, 'system'),
   new KalshiConnector(config.KALSHI_API_URL, config.KALSHI_KEY_ID, config.KALSHI_PRIVATE_KEY, 'system')
@@ -42,7 +44,8 @@ async function scanOnce() {
           maxParticipationRate: 0.1,
           severeAnomaly: false,
           capturedOrderbook: book,
-          liveActivationConfirmedAt: safety.liveActivationConfirmedAt
+          liveActivationConfirmedAt: safety.liveActivationConfirmedAt,
+          researchStages
         });
       }
       accepted += 1;

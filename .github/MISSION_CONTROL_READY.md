@@ -1,4 +1,4 @@
-# 🚀 XSPEC Mission Control Dashboard - READY FOR PRODUCTION
+# XSPEC Mission Control Dashboard - Operational Readiness Notes
 
 ## Quick Summary
 
@@ -114,6 +114,6 @@ For questions or issues:
 
 ## Status
 
-🟢 **READY FOR PRODUCTION**
+Mission Control UI and health checks are implemented. Live trading is **not ready** until deployment credentials, provider health, reconciliation, kill-switch, and risk gates are proven.
 
 No further work required. All requirements met. Ready for immediate merge and deployment.

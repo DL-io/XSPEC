@@ -1,7 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@polyshore/api', '@polyshore/config', '@polyshore/auth', '@polyshore/observability', '@polyshore/risk'], // HARDENED: configuration page reads risk mandates from the canonical package.
+  outputFileTracingRoot: new URL('../..', import.meta.url).pathname,
+  transpilePackages: ['@polyshore/api', '@polyshore/config', '@polyshore/auth', '@polyshore/db', '@polyshore/observability', '@polyshore/reports', '@polyshore/research', '@polyshore/risk'],
   async headers() {
     return [
       {

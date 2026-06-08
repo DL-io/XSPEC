@@ -37,6 +37,7 @@ export async function executePaperOrder(order: NewOrder, book: OrderbookSnapshot
 
 export async function executeLiveLimitOrder(connector: VenueConnector, order: NewOrder, config?: RuntimeConfig): Promise<VenueOrderResult> {
   if (order.limitPrice <= 0 || order.limitPrice >= 1) throw new Error('live execution requires a bounded limit price');
+  if (order.timeInForce && order.timeInForce !== 'GTC') throw new Error('live execution requires GTC limit orders');
   if (config) assertLiveReadiness(config);
   return connector.placeOrder(order);
 }
@@ -51,6 +52,7 @@ export function classifyVenueExecutionError(error: unknown): ExecutionAuditStatu
 
 export async function submitLiveLimitOrder(connector: VenueConnector, order: NewOrder, store: LiveOrderStore, config?: RuntimeConfig): Promise<VenueOrderResult> {
   if (order.limitPrice <= 0 || order.limitPrice >= 1) throw new Error('live execution requires limit orders only with bounded prices');
+  if (order.timeInForce && order.timeInForce !== 'GTC') throw new Error('live execution requires GTC limit orders');
   if (config) assertLiveReadiness(config);
   const orderId = await store.createIntent(order);
   await store.recordTransition(orderId, 'ORDER_VALIDATED', 'limit order validated');

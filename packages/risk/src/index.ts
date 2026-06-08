@@ -40,6 +40,8 @@ export interface RiskContext {
   drawdownLimit: number;
   maxOpenOrders: number;
   maxParticipationRate: number;
+  maxOrderSize?: number;
+  maxModelDisagreement?: number;
   severeAnomaly: boolean;
   liveActivationConfirmedAt?: Date;
   now: Date;
@@ -62,10 +64,10 @@ const gates: Record<RiskGateName, Gate> = {
   openOrderCountGate: (ctx) => ctx.portfolio.openOrderCount >= ctx.maxOpenOrders ? { ok: false, reason: 'open order count limit exceeded' } : { ok: true },
   minEdgeGate: (ctx) => ctx.proposal.penalizedEdge < MANDATES[ctx.mandateId].minEdge ? { ok: false, reason: 'minimum edge not met' } : { ok: true },
   minConfidenceGate: (ctx) => ctx.proposal.ensemble.ensembleConfidence < MANDATES[ctx.mandateId].minConfidence ? { ok: false, reason: 'minimum confidence not met' } : { ok: true },
-  spreadGate: (ctx) => ctx.market.spread > 0.03 ? { ok: false, reason: 'spread exceeds 3 percent' } : { ok: true },
+  spreadGate: (ctx) => ctx.market.dataFreshnessMs > 30_000 ? { ok: false, reason: 'market data is stale' } : ctx.market.spread > 0.03 ? { ok: false, reason: 'spread exceeds 3 percent' } : ctx.proposal.ensemble.disagreementScore > (ctx.maxModelDisagreement ?? 0.2) ? { ok: false, reason: 'model disagreement exceeds limit' } : { ok: true },
   liquidityParticipationGate: (ctx) => ctx.market.totalLiquidity <= 0 || ctx.proposal.suggestedSize / ctx.market.totalLiquidity > ctx.maxParticipationRate ? { ok: false, reason: 'liquidity participation limit exceeded' } : { ok: true },
   deepAnomalyGate: (ctx) => ctx.severeAnomaly ? { ok: false, reason: 'deep anomaly detected' } : { ok: true },
-  orderSizeSanityGate: (ctx) => !Number.isFinite(ctx.proposal.suggestedSize) || ctx.proposal.suggestedSize <= 0 || ctx.proposal.suggestedSize > ctx.portfolio.cash ? { ok: false, reason: 'order size sanity check failed' } : { ok: true },
+  orderSizeSanityGate: (ctx) => !Number.isFinite(ctx.proposal.suggestedSize) || ctx.proposal.suggestedSize <= 0 || ctx.proposal.suggestedSize > ctx.portfolio.cash || ctx.proposal.suggestedSize > (ctx.maxOrderSize ?? ctx.portfolio.cash) ? { ok: false, reason: 'order size sanity check failed' } : { ok: true },
   mandateSpecificGate: (ctx) => ctx.market.hasAmbiguousResolution && ctx.mandateId !== 'aggressive' ? { ok: false, reason: 'mandate blocks ambiguous resolution markets' } : { ok: true }
 };
 
@@ -85,5 +87,5 @@ export function evaluateRisk(ctx: RiskContext): RiskDecision {
       };
     }
   }
-  return { approved: true, reasons: [], evaluatedGates, maxApprovedSize: ctx.proposal.suggestedSize };
+  return { approved: true, reasons: [], evaluatedGates, maxApprovedSize: Math.min(ctx.proposal.suggestedSize, ctx.maxOrderSize ?? ctx.proposal.suggestedSize, ctx.portfolio.cash) };
 }

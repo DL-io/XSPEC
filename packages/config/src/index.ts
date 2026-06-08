@@ -27,6 +27,8 @@ const ConfigObjectSchema = z.object({
   KALSHI_PRIVATE_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  TAVILY_API_KEY: z.string().optional(),
+  RESEARCH_PROVIDERS_REQUIRED: z.coerce.boolean().default(false),
   GROQ_API_KEY: z.string().optional(),
   OLLAMA_BASE_URL: z.string().url().optional(),
   STRICT_RESOLUTION_MODE: z.coerce.boolean().default(true),

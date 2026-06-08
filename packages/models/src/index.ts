@@ -1,6 +1,16 @@
 import type { FeatureSnapshot, MarketDossier, ModelEstimate, NormalizedMarket, EnsembleResult } from '@polyshore/core';
+import { z } from 'zod';
 
 export const LAUNCH_MODELS = ['base_rate', 'llm_research', 'sentiment', 'microstructure', 'historical_analog', 'deep_reasoner', 'relative_value', 'basket_tilt', 'quant_model'] as const;
+
+export const ModelEstimateSchema = z.object({
+  modelId: z.string().min(1),
+  probability: z.number().min(0).max(1),
+  confidenceWeight: z.number().min(0).max(1),
+  evidence: z.array(z.string()),
+  freshnessScore: z.number().min(0).max(1),
+  failureReason: z.string().optional()
+});
 
 export function generateModelEstimates(input: { market: NormalizedMarket; dossier: MarketDossier; featureSnapshot: FeatureSnapshot }): ModelEstimate[] {
   const { market, dossier, featureSnapshot } = input;
@@ -28,9 +38,13 @@ function estimate(modelId: string, probability: number, confidenceWeight: number
 }
 
 export function buildEnsemble(estimates: ModelEstimate[], calibrationAdjustment = 0): EnsembleResult {
-  const successful = estimates.filter((estimate) => !estimate.failureReason && Number.isFinite(estimate.probability));
+  const parsed = z.array(ModelEstimateSchema).safeParse(estimates);
+  if (!parsed.success) {
+    return { ensembleProbability: 0, ensembleUncertainty: 1, ensembleConfidence: 0, modelEstimates: estimates, outlierModels: [], calibrationAdjustment, disagreementScore: 1, recommendTrade: false, skipReason: `malformed model output: ${parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')}` };
+  }
+  const successful = parsed.data.filter((estimate) => !estimate.failureReason && Number.isFinite(estimate.probability));
   if (successful.length < 3) {
-    return { ensembleProbability: 0, ensembleUncertainty: 1, ensembleConfidence: 0, modelEstimates: estimates, outlierModels: [], calibrationAdjustment, disagreementScore: 1, recommendTrade: false, skipReason: 'fewer than 3 models succeeded' };
+    return { ensembleProbability: 0, ensembleUncertainty: 1, ensembleConfidence: 0, modelEstimates: parsed.data, outlierModels: [], calibrationAdjustment, disagreementScore: 1, recommendTrade: false, skipReason: 'fewer than 3 models succeeded' };
   }
   const sorted = [...successful].sort((a, b) => a.probability - b.probability);
   const median = sorted[Math.floor(sorted.length / 2)].probability;
@@ -51,7 +65,7 @@ export function buildEnsemble(estimates: ModelEstimate[], calibrationAdjustment 
     ensembleProbability,
     ensembleUncertainty,
     ensembleConfidence,
-    modelEstimates: estimates,
+    modelEstimates: parsed.data,
     outlierModels,
     calibrationAdjustment,
     disagreementScore,

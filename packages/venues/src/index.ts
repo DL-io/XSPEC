@@ -1,6 +1,7 @@
 import { constants, createPrivateKey, sign } from 'node:crypto';
 import { AssetType, Chain, ClobClient, OrderType, Side as ClobSide, SignatureTypeV2, type ApiKeyCreds, type OpenOrder, type OrderResponse, type Trade } from '@polymarket/clob-client-v2';
 import type { NewOrder, NormalizedMarket, OrderbookSnapshot, PortfolioState, Position, VenueCancelResult, VenueConnector, VenueOrderResult } from '@polyshore/core';
+import { isValidPolymarketTokenId, resolutionAmbiguityScore } from '@polyshore/scanner';
 import { createWalletClient, http, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -44,29 +45,29 @@ export class PolymarketConnector implements VenueConnector {
 
   async fetchMarkets(): Promise<NormalizedMarket[]> {
     const rows = await getJson<Array<Record<string, unknown>>>(`${this.gammaUrl}/markets?active=true&closed=false`);
-    return rows.map((row) => {
+    return rows.flatMap((row) => {
       const conditionId = String(row.conditionId ?? row.condition_id ?? row.id ?? row.slug ?? '');
       const tokenIds = parsePolymarketTokenIds(row);
       const marketId = `polymarket:${conditionId}`;
+      if (!tokenIds.yes || !isValidPolymarketTokenId(tokenIds.yes)) return [];
       if (tokenIds.yes) this.outcomeTokenIds.set(marketId, tokenIds);
-      const bestBid = Number(row.bestBid ?? row.best_bid ?? 0);
-      const bestAsk = Number(row.bestAsk ?? row.best_ask ?? 0);
-      const midpoint = bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : 0;
+      const resolutionCriteria = String(row.resolutionSource ?? row.rules ?? row.description ?? '');
+      const ambiguity = resolutionAmbiguityScore(resolutionCriteria);
       return {
         id: marketId,
         source: 'polymarket',
-        externalId: conditionId,
+        externalId: tokenIds.yes,
         slug: String(row.slug ?? ''),
         question: String(row.question ?? row.title ?? ''),
-        resolutionCriteria: String(row.resolutionSource ?? row.rules ?? ''),
+        resolutionCriteria,
         resolutionDate: new Date(String(row.endDate ?? row.end_date ?? Date.now())),
         status: 'active',
-        bestBid,
-        bestAsk,
-        spread: Math.max(0, bestAsk - bestBid),
-        spreadBps: midpoint > 0 ? ((bestAsk - bestBid) / midpoint) * 10_000 : 0,
-        midpoint,
-        lastTradePrice: Number(row.lastTradePrice ?? row.last_trade_price ?? midpoint),
+        bestBid: 0,
+        bestAsk: 0,
+        spread: 0,
+        spreadBps: 0,
+        midpoint: 0,
+        lastTradePrice: Number(row.lastTradePrice ?? row.last_trade_price ?? 0),
         bidDepth1Pct: 0,
         askDepth1Pct: 0,
         bidDepth5Pct: 0,
@@ -76,10 +77,10 @@ export class PolymarketConnector implements VenueConnector {
         volume7d: Number(row.volume1wk ?? row.volume7d ?? 0),
         openInterest: Number(row.openInterest ?? 0),
         tradeCount24h: Number(row.tradeCount24h ?? 0),
-        dataFreshnessMs: 0,
+        dataFreshnessMs: Number.POSITIVE_INFINITY,
         isLiquid: Number(row.liquidityNum ?? row.liquidity ?? 0) >= 500,
-        hasAmbiguousResolution: false,
-        resolutionAmbiguityScore: 0,
+        hasAmbiguousResolution: ambiguity >= 0.4,
+        resolutionAmbiguityScore: ambiguity,
         category: String(row.category ?? 'uncategorized'),
         tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
         scannedAt: new Date()
@@ -88,10 +89,12 @@ export class PolymarketConnector implements VenueConnector {
   }
 
   async fetchOrderbook(marketId: string): Promise<OrderbookSnapshot> {
-    const tokenId = encodeURIComponent(this.tokenIdFor(marketId, 'yes'));
-    const book = await getJson<{ bids?: { price: string; size: string }[]; asks?: { price: string; size: string }[] }>(`${this.clobUrl}/book?token_id=${tokenId}`);
+    const tokenId = this.tokenIdFor(marketId, 'yes');
+    if (!isValidPolymarketTokenId(tokenId)) throw new Error('malformed Polymarket token id');
+    const book = await getJson<{ bids?: { price: string; size: string }[]; asks?: { price: string; size: string }[] }>(`${this.clobUrl}/book?token_id=${encodeURIComponent(tokenId)}`);
     return {
       marketId,
+      tokenId,
       source: this.id,
       bids: (book.bids ?? []).map((b) => ({ price: Number(b.price), size: Number(b.size) })),
       asks: (book.asks ?? []).map((a) => ({ price: Number(a.price), size: Number(a.size) })),

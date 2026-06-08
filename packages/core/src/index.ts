@@ -26,12 +26,13 @@ export interface ApiClient { id: string; tenantId: string; name: string; scopes:
 export interface UsageMetric { id: string; tenantId: string; apiClientId?: string; route: string; units: number; recordedAt: Date; }
 export interface UnsubscribeFn { (): void; }
 export interface FillEvent { orderId: string; marketId: string; side: Side; quantity: number; price: number; filledAt: Date; }
-export interface NewOrder { marketId: string; side: Side; quantity: number; limitPrice: number; clientOrderId: string; }
+export interface NewOrder { marketId: string; side: Side; quantity: number; limitPrice: number; clientOrderId: string; tokenId?: string; timeInForce?: 'GTC'; }
 export interface VenueOrderResult { venueOrderId: string; clientOrderId: string; state: OrderLifecycleState; filledQuantity: number; averagePrice?: number; raw?: unknown; }
 export interface VenueCancelResult { venueOrderId: string; confirmed: boolean; raw?: unknown; }
 
 export interface OrderbookSnapshot {
   marketId: string;
+  tokenId?: string;
   source: VenueId;
   bids: { price: number; size: number }[];
   asks: { price: number; size: number }[];

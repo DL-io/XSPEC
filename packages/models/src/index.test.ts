@@ -14,4 +14,10 @@ describe('ensemble', () => {
     expect(result.outlierModels).toContain('c');
     expect(result.recommendTrade).toBe(false);
   });
+
+  it('skips malformed model output', () => {
+    const result = buildEnsemble([{ modelId: 'bad', probability: Number.NaN, confidenceWeight: 1, evidence: [], freshnessScore: 1 }]);
+    expect(result.recommendTrade).toBe(false);
+    expect(result.skipReason).toContain('malformed model output');
+  });
 });

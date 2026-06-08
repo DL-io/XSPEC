@@ -90,6 +90,9 @@ importers:
       '@polyshore/reports':
         specifier: workspace:*
         version: link:../../packages/reports
+      '@polyshore/research':
+        specifier: workspace:*
+        version: link:../../packages/research
       '@polyshore/risk':
         specifier: workspace:*
         version: link:../../packages/risk

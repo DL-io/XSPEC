@@ -9,5 +9,6 @@ describe('paper execution', () => {
       { latencyMs: 0, maxDepthParticipation: 1, rejectionThreshold: 0.5 }
     );
     expect(result.result.averagePrice).toBe(0.6);
+    expect(result.transitions.map((transition) => transition.to)).toEqual(['INTENT_CREATED', 'ORDER_VALIDATED', 'ORDER_SIGNED', 'ORDER_POSTED', 'ACCEPTED_BY_CLOB', 'FILLED']);
   });
 });

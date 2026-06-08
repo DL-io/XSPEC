@@ -69,8 +69,16 @@ describe('runtime config Kalshi credentials', () => {
 
   it('does not expose secret values in validation output', () => {
     const secret = 'session-secret-value-that-must-not-print';
-    const result = validateConfigFromEnvFile({ env: baseEnv({ SESSION_SECRET: secret }) });
+    const result = validateConfigFromEnvFile({ cwd: tempDir(), env: baseEnv({ SESSION_SECRET: secret }) });
     expect(JSON.stringify(result)).not.toContain(secret);
+  });
+
+  it('accepts configured research provider keys', () => {
+    const config = loadConfig(baseEnv({ OPENAI_API_KEY: 'openai-key', TAVILY_API_KEY: 'tavily-key', RESEARCH_PROVIDERS_REQUIRED: 'true' }));
+
+    expect(config.OPENAI_API_KEY).toBe('openai-key');
+    expect(config.TAVILY_API_KEY).toBe('tavily-key');
+    expect(config.RESEARCH_PROVIDERS_REQUIRED).toBe(true);
   });
 });
 
