@@ -11,6 +11,8 @@ const ConfigObjectSchema = z.object({
   REDIS_URL: z.string().url().refine((value) => isRedisUrl(value), { message: 'REDIS_URL must use redis:// or rediss://' }),
   SESSION_SECRET: z.string().min(32),
   ENCRYPTION_KEY: z.string().min(32),
+  NEXT_PUBLIC_TENANT_ID: z.string().min(1).default('system'),
+  NEXT_PUBLIC_OPERATOR_API_KEY: z.string().optional(),
   POLYMARKET_GAMMA_URL: z.string().url().default('https://gamma-api.polymarket.com'),
   POLYMARKET_CLOB_URL: z.string().url().default('https://clob.polymarket.com'),
   POLYMARKET_PRIVATE_KEY: z.string().optional(),
@@ -106,7 +108,8 @@ export function liveReadiness(config: RuntimeConfig): LiveReadinessCheck {
     DATABASE_URL: Boolean(config.DATABASE_URL),
     REDIS_URL: Boolean(config.REDIS_URL),
     SESSION_SECRET: config.SESSION_SECRET.length >= 32,
-    ENCRYPTION_KEY: config.ENCRYPTION_KEY.length >= 32
+    ENCRYPTION_KEY: config.ENCRYPTION_KEY.length >= 32,
+    NEXT_PUBLIC_TENANT_ID: Boolean(config.NEXT_PUBLIC_TENANT_ID)
   };
   const descriptions: Record<keyof typeof configured, string> = {
     LIVE_TRADING_ENABLED: 'must be true for live execution',
@@ -119,7 +122,8 @@ export function liveReadiness(config: RuntimeConfig): LiveReadinessCheck {
     DATABASE_URL: 'required for durable audit/order state',
     REDIS_URL: 'required for distributed rate limiting and runtime coordination',
     SESSION_SECRET: 'must be at least 32 characters',
-    ENCRYPTION_KEY: 'must be at least 32 characters'
+    ENCRYPTION_KEY: 'must be at least 32 characters',
+    NEXT_PUBLIC_TENANT_ID: 'required for terminal API requests'
   };
   const missing = Object.fromEntries(
     Object.entries(configured)

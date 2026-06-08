@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { apiFetch, tenantId } from './api-client';
 import styles from './mission-control.module.css';
 
 interface OverviewData {
@@ -26,8 +27,6 @@ interface Signal {
   createdAt: Date;
 }
 
-const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
-
 export default function MissionControl() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -39,8 +38,8 @@ export default function MissionControl() {
       try {
         setLoading(true);
         const [overviewRes, signalsRes] = await Promise.all([
-          fetch(`/api/overview?tenantId=${tenantId}`),
-          fetch(`/api/signals?tenantId=${tenantId}`)
+          apiFetch(`/api/overview?tenantId=${tenantId}`),
+          apiFetch(`/api/signals?tenantId=${tenantId}`)
         ]);
 
         if (!overviewRes.ok || !signalsRes.ok) throw new Error('Failed to fetch data');

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { apiFetch, tenantId } from '../api-client';
 import styles from './opportunities.module.css';
 
 interface Signal {
@@ -15,8 +16,6 @@ interface Signal {
   createdAt: string;
 }
 
-const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
-
 export default function OpportunitiesPage() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +25,7 @@ export default function OpportunitiesPage() {
   useEffect(() => {
     const fetchSignals = async () => {
       try {
-        const res = await fetch(`/api/signals?tenantId=${tenantId}`);
+        const res = await apiFetch(`/api/signals?tenantId=${tenantId}`);
         if (!res.ok) throw new Error('Failed to fetch signals');
         const data = await res.json();
         setSignals(data.signals || []);

@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { apiFetch, tenantId } from '../api-client';
 import styles from './portfolio.module.css';
-
-const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
 
 interface Position {
   id: string;
@@ -25,7 +24,7 @@ export default function Portfolio() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch(`/api/overview?tenantId=${tenantId}`);
+        const res = await apiFetch(`/api/overview?tenantId=${tenantId}`);
         if (!res.ok) throw new Error('Failed to fetch portfolio');
         setData(await res.json());
       } catch (err) {

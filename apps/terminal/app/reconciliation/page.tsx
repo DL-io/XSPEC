@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { apiFetch, tenantId } from '../api-client';
 import styles from './reconciliation.module.css';
-
-const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
 
 export default function ReconciliationCenter() {
   const [state, setState] = useState<any>(null);
@@ -18,7 +17,7 @@ export default function ReconciliationCenter() {
 
   const fetchState = async () => {
     try {
-      const res = await fetch(`/api/reconciliation?tenantId=${tenantId}`);
+      const res = await apiFetch(`/api/reconciliation?tenantId=${tenantId}`);
       if (!res.ok) throw new Error('Failed to fetch reconciliation state');
       const data = await res.json();
       setState(data.state);
@@ -32,7 +31,7 @@ export default function ReconciliationCenter() {
   const handleAcknowledge = async () => {
     try {
       setAcknowledging(true);
-      const res = await fetch('/api/reconciliation', {
+      const res = await apiFetch('/api/reconciliation', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -54,7 +53,7 @@ export default function ReconciliationCenter() {
   const handleClear = async () => {
     try {
       setAcknowledging(true);
-      const res = await fetch('/api/reconciliation', {
+      const res = await apiFetch('/api/reconciliation', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

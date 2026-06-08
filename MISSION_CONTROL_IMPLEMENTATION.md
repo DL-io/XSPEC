@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-07
 
-The terminal app contains operational pages for dashboard, opportunities, portfolio, audit, performance, reconciliation, configuration, playbooks, research packs, and health. These pages fetch from repo API routes and show empty/loading/error states rather than seeded showcase data.
+The terminal app contains operational pages for dashboard, opportunities, portfolio, audit, performance, reconciliation, configuration, research packs, and health. These pages fetch from repo API routes and show empty/loading/error states rather than seeded showcase data.
 
 ## Important Limits
 

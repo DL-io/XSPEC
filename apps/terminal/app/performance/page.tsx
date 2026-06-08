@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { apiFetch, tenantId } from '../api-client';
 import styles from '../operator.module.css';
 
 type DateRange = '7d' | '30d' | '90d' | 'all';
@@ -34,8 +35,6 @@ interface PerformanceResponse {
   records?: CalibrationRecord[];
 }
 
-const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
-
 export default function PerformanceAnalytics() {
   const [data, setData] = useState<PerformanceResponse | null>(null);
   const [range, setRange] = useState<DateRange>('30d');
@@ -48,7 +47,7 @@ export default function PerformanceAnalytics() {
         const params = new URLSearchParams({ tenantId });
         const from = rangeStart(range);
         if (from) params.set('from', from.toISOString());
-        const res = await fetch(`/api/performance?${params.toString()}`);
+        const res = await apiFetch(`/api/performance?${params.toString()}`);
         if (!res.ok) throw new Error('Failed to fetch performance analytics');
         setData(await res.json() as PerformanceResponse);
       } catch (err) {

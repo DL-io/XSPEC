@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { apiFetch, tenantId } from '../api-client';
 import styles from '../operator.module.css';
 
 interface AuditRecord {
@@ -33,8 +34,6 @@ interface MarketDossier {
   skipReason?: string;
 }
 
-const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
-
 export default function ResearchPacks() {
   const [dossiers, setDossiers] = useState<MarketDossier[]>([]);
   const [questions, setQuestions] = useState<Record<string, string>>({});
@@ -48,14 +47,14 @@ export default function ResearchPacks() {
   useEffect(() => {
     const fetchDossiers = async () => {
       try {
-        const auditRes = await fetch(`/api/audits?tenantId=${tenantId}&limit=25`);
+        const auditRes = await apiFetch(`/api/audits?tenantId=${tenantId}&limit=25`);
         if (!auditRes.ok) throw new Error('Failed to fetch audited markets');
         const auditPayload = await auditRes.json() as { audits?: AuditRecord[] };
         const audits = auditPayload.audits ?? [];
         setQuestions(Object.fromEntries(audits.map((audit) => [audit.marketId, audit.scannerData?.question ?? audit.marketId])));
         const marketIds = [...new Set(audits.map((audit) => audit.marketId))].slice(0, 12);
         const results = await Promise.all(marketIds.map(async (marketId) => {
-          const res = await fetch(`/api/dossiers?tenantId=${tenantId}&marketId=${encodeURIComponent(marketId)}`);
+          const res = await apiFetch(`/api/dossiers?tenantId=${tenantId}&marketId=${encodeURIComponent(marketId)}`);
           if (res.status === 404) return null;
           if (!res.ok) throw new Error('Failed to fetch market dossier');
           return await res.json() as MarketDossier;
@@ -78,7 +77,7 @@ export default function ResearchPacks() {
   const exportPack = async (dossier: MarketDossier) => {
     setExporting(true);
     try {
-      const res = await fetch('/api/research-packs', {
+      const res = await apiFetch('/api/research-packs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenantId, marketIds: [dossier.marketId], title: `Research pack ${dossier.marketId}` })

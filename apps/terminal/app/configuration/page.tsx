@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { MANDATES } from '@polyshore/risk';
+import { apiFetch, tenantId } from '../api-client';
 import styles from '../operator.module.css';
 
 interface OverviewResponse {
@@ -19,7 +20,6 @@ interface ConfigKeyStatus {
   status: 'SET' | 'MISSING';
 }
 
-const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
 const activeMandate = 'conservative' as const;
 
 export default function Configuration() {
@@ -33,8 +33,8 @@ export default function Configuration() {
     const fetchConfig = async () => {
       try {
         const [overviewRes, configRes] = await Promise.all([
-          fetch(`/api/overview?tenantId=${tenantId}`),
-          fetch(`/api/configuration?tenantId=${tenantId}`)
+          apiFetch(`/api/overview?tenantId=${tenantId}`),
+          apiFetch(`/api/configuration?tenantId=${tenantId}`)
         ]);
         if (!overviewRes.ok || !configRes.ok) throw new Error('Failed to fetch configuration state');
         setOverview(await overviewRes.json() as OverviewResponse);
@@ -59,7 +59,7 @@ export default function Configuration() {
   const updateSafety = async (body: object) => {
     setUpdating(true);
     try {
-      const res = await fetch('/api/safety', {
+      const res = await apiFetch('/api/safety', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenantId, ...body })

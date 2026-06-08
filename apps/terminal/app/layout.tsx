@@ -10,7 +10,6 @@ const nav = [
   ['Performance', '/performance'],
   ['Reconciliation', '/reconciliation'], // HARDENED: reconciliation route was missing from global navigation.
   ['Configuration', '/configuration'],
-  ['Playbooks', '/playbooks'],
   ['Research Packs', '/research-packs'],
   ['Health', '/health']
 ];

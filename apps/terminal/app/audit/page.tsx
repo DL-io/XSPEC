@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { apiFetch, tenantId } from '../api-client';
 import styles from '../operator.module.css';
 
 type DecisionFilter = 'ALL' | 'APPROVE' | 'REJECT';
@@ -26,8 +27,6 @@ interface DecisionAudit {
   createdAt: string;
 }
 
-const tenantId = process.env.NEXT_PUBLIC_TENANT_ID || 'demo-tenant';
-
 export default function AuditExplorer() {
   const [audits, setAudits] = useState<DecisionAudit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +42,7 @@ export default function AuditExplorer() {
         const params = new URLSearchParams({ tenantId, limit: '100' });
         if (decision !== 'ALL') params.set('decision', decision);
         params.set('from', rangeStart(dateRange).toISOString());
-        const res = await fetch(`/api/audits?${params.toString()}`);
+        const res = await apiFetch(`/api/audits?${params.toString()}`);
         if (!res.ok) throw new Error('Failed to fetch audit records');
         const data = await res.json() as { audits?: DecisionAudit[] };
         setAudits(data.audits ?? []);
