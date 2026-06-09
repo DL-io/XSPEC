@@ -15,6 +15,13 @@
       "when": 1780830569095,
       "tag": "0001_chilly_gorilla_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1780969414333,
+      "tag": "0002_tidy_nightcrawler",
+      "breakpoints": true
     }
   ]
 }
