@@ -20,7 +20,9 @@
     "smoke": "./node_modules/.bin/tsx scripts/smoke.ts",
     "seed": "./node_modules/.bin/tsx scripts/seed.ts",
     "simulate": "./node_modules/.bin/tsx scripts/simulate.ts",
-    "validate-config": "./node_modules/.bin/tsx scripts/validate-config.ts"
+    "validate-config": "./node_modules/.bin/tsx scripts/validate-config.ts",
+    "paper:e2e": "SMOKE_RUN_LOCAL_CHECKS=true SMOKE_WORKERS=true ./node_modules/.bin/tsx scripts/smoke.ts",
+    "deploy:check": "pnpm preflight && pnpm build"
   },
   "dependencies": {
     "@polymarket/clob-client-v2": "^1.0.6",

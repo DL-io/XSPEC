@@ -147,12 +147,41 @@ importers:
 
   packages/venues: {}
 
-  workers/alert-worker: {}
+  workers/alert-worker:
+    dependencies:
+      '@polyshore/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
 
-  workers/calibration-worker: {}
+  workers/calibration-worker:
+    dependencies:
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
 
   workers/execution-worker:
     dependencies:
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@polyshore/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -168,9 +197,18 @@ importers:
 
   workers/reconciliation-worker:
     dependencies:
+      '@polyshore/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@polyshore/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@polyshore/reconciliation':
         specifier: workspace:*
         version: link:../../packages/reconciliation
@@ -178,13 +216,32 @@ importers:
         specifier: workspace:*
         version: link:../../packages/venues
 
-  workers/research-worker: {}
+  workers/research-worker:
+    dependencies:
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+      '@polyshore/reports':
+        specifier: workspace:*
+        version: link:../../packages/reports
+      '@polyshore/research':
+        specifier: workspace:*
+        version: link:../../packages/research
 
   workers/scanner-worker:
     dependencies:
       '@polyshore/audit':
         specifier: workspace:*
         version: link:../../packages/audit
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@polyshore/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -197,6 +254,9 @@ importers:
       '@polyshore/models':
         specifier: workspace:*
         version: link:../../packages/models
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@polyshore/portfolio':
         specifier: workspace:*
         version: link:../../packages/portfolio
@@ -206,6 +266,12 @@ importers:
       '@polyshore/risk':
         specifier: workspace:*
         version: link:../../packages/risk
+      '@polyshore/scanner':
+        specifier: workspace:*
+        version: link:../../packages/scanner
+      '@polyshore/venues':
+        specifier: workspace:*
+        version: link:../../packages/venues
 
 packages:
 

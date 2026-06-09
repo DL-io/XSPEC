@@ -1,8 +1,8 @@
 import type { DecisionAudit, ExecutionAuditResult, NewOrder, OperatingMode, OrderbookSnapshot, VenueConnector } from '@polyshore/core';
 import type { RuntimeConfig } from '@polyshore/config';
 import type { LiveOrderStore } from '@polyshore/execution';
-import { DecisionAuditRepository, OrderRepository, type OmegaDb } from '../../../packages/db/src/index.ts';
-import { classifyVenueExecutionError, executePaperOrder, submitLiveLimitOrder } from '../../../packages/execution/src/index.ts';
+import { DecisionAuditRepository, OrderRepository, type OmegaDb } from '@polyshore/db';
+import { classifyVenueExecutionError, executePaperOrder, submitLiveLimitOrder } from '@polyshore/execution';
 
 export interface ExecutionProcessorConfig {
   tenantId: string;
