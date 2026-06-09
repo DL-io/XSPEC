@@ -91,7 +91,7 @@ export default function AuditExplorer() {
       </div>
 
       {filteredAudits.length === 0 ? (
-        <div className={styles.emptyState}>No audit records yet. The scanner will populate this as markets are evaluated.</div>
+        <div className={styles.emptyState}>Waiting for first scanner cycle — audit records will appear here as markets are evaluated.</div>
       ) : (
         <div className={styles.tableContainer}>
           <table className={styles.table}>
@@ -115,7 +115,7 @@ export default function AuditExplorer() {
                       <td className={styles.mono}>{new Date(audit.createdAt).toLocaleString()}</td>
                       <td>{truncate(question, 86)}</td>
                       <td><span className={`${styles.badge} ${approved ? styles.approved : styles.rejected}`}>{approved ? 'APPROVE' : 'REJECT'}</span></td>
-                      <td>{percent(audit.edgeCalculations?.penalizedEdge ?? audit.edgeCalculations?.edge)}</td>
+                      <td><EdgeCell value={audit.edgeCalculations?.penalizedEdge ?? audit.edgeCalculations?.edge} /></td>
                       <td>{percent(audit.ensembleOutput?.ensembleConfidence)}</td>
                       <td>{percent(audit.ensembleOutput?.ensembleProbability)}</td>
                     </tr>
@@ -175,6 +175,14 @@ function rangeStart(range: DateRange): Date {
 
 function percent(value: number | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : 'N/A';
+}
+
+function EdgeCell({ value }: { value: number | undefined }) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return <span className={styles.edgeNeutral}>N/A</span>;
+  const pct = (value * 100).toFixed(1);
+  if (value > 0) return <span className={styles.edgePositive}>+{pct}%</span>;
+  if (value < 0) return <span className={styles.edgeNegative}>{pct}%</span>;
+  return <span className={styles.edgeNeutral}>{pct}%</span>;
 }
 
 function truncate(value: string, limit: number): string {

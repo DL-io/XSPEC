@@ -129,7 +129,8 @@ export default function OpportunitiesPage() {
         </div>
       ) : (
         <div className={styles.emptyState}>
-          <p>No opportunities detected at this time</p>
+          <strong style={{ display: 'block', marginBottom: '6px', color: '#333', fontSize: '15px' }}>Waiting for first scanner cycle</strong>
+          Opportunities appear here once the scanner finds markets matching your filters.
         </div>
       )}
     </div>

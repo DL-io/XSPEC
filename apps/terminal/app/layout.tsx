@@ -2,16 +2,31 @@ import './globals.css';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-const nav = [
-  ['Dashboard', '/'], // HARDENED: nav label matches the production route map.
-  ['Opportunities', '/opportunities'], // HARDENED: all terminal pages are reachable from the shell.
-  ['Portfolio', '/portfolio'],
-  ['Audit', '/audit'],
-  ['Performance', '/performance'],
-  ['Reconciliation', '/reconciliation'], // HARDENED: reconciliation route was missing from global navigation.
-  ['Configuration', '/configuration'],
-  ['Research Packs', '/research-packs'],
-  ['Health', '/health']
+const sections = [
+  {
+    label: 'Operations',
+    links: [
+      ['Dashboard', '/'],
+      ['Opportunities', '/opportunities'],
+      ['Portfolio', '/portfolio'],
+      ['Audit Trail', '/audit'],
+    ],
+  },
+  {
+    label: 'Analytics',
+    links: [
+      ['Performance', '/performance'],
+      ['Research Packs', '/research-packs'],
+      ['Reconciliation', '/reconciliation'],
+    ],
+  },
+  {
+    label: 'System',
+    links: [
+      ['Health', '/health'],
+      ['Configuration', '/configuration'],
+    ],
+  },
 ];
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -20,8 +35,20 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <div className="shell">
           <nav className="nav">
-            <h1>POLY-SHORE OMEGA X</h1>
-            {nav.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
+            <div className="navBrand">
+              <div className="navWordmark"><em>X</em>SPEC</div>
+              <div className="navSubtitle">Prediction Market&nbsp;Operator Terminal</div>
+            </div>
+            <div className="navLinks">
+              {sections.map((section) => (
+                <div key={section.label}>
+                  <div className="navSectionLabel">{section.label}</div>
+                  {section.links.map(([label, href]) => (
+                    <Link key={href} href={href} className="navLink">{label}</Link>
+                  ))}
+                </div>
+              ))}
+            </div>
           </nav>
           <main className="main">{children}</main>
         </div>

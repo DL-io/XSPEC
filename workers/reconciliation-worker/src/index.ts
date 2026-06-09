@@ -77,7 +77,16 @@ async function reconcileOnce() {
   logInfo('reconciliation cycle complete', { venues: successfulVenues, mismatches: totalMismatches, severeMismatchOpen });
 }
 
-await reconcileOnce();
+try {
+  await reconcileOnce();
+} catch (error) {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (config.OPERATING_MODE === 'paper') {
+    logInfo('reconciliation skipped in paper mode — venue credentials not required', { error: msg });
+  } else {
+    throw error;
+  }
+}
 if (process.env.WORKER_ONCE === 'true') {
   logInfo('reconciliation worker one-shot complete', { mode: config.OPERATING_MODE });
 } else {

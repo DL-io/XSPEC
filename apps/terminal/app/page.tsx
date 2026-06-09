@@ -2,18 +2,41 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiFetch, tenantId } from './api-client';
 import styles from './mission-control.module.css';
 
 interface OverviewData {
-  safety: any;
-  reconciliation: any;
-  portfolio: any;
+  safety: { killSwitchActive: boolean; killSwitchReason?: string; liveAuthorized: boolean };
+  reconciliation: { severeMismatchOpen: boolean; incident?: { acknowledgedAt?: string } };
+  portfolio: { equity: number; cash: number; totalExposure: number; dailyPnl: number; maxDrawdown: number; openOrderCount: number; positions: Position[] } | null;
   portfolioHistory: Array<{ equity: number; capturedAt: string }>;
-  audits: any[];
-  orders: any[];
-  workers: any[];
+  audits: Audit[];
+  orders: unknown[];
+  workers: Worker[];
+}
+
+interface Audit {
+  id: string;
+  marketId: string;
+  scannerData?: { question?: string };
+  ensembleOutput?: { ensembleProbability: number; ensembleConfidence: number };
+  edgeCalculations?: { edge?: number; penalizedEdge?: number };
+  riskDecision?: { approved: boolean };
+  finalOutcome: 'trade' | 'skip';
+  createdAt: string;
+}
+
+interface Position {
+  marketId: string;
+  side: string;
+  quantity: number;
+  marketValue: number;
+}
+
+interface Worker {
+  worker: string;
+  status: 'ok' | 'error';
 }
 
 interface Signal {
@@ -24,14 +47,14 @@ interface Signal {
   finalOutcome: string;
   riskApproved: boolean;
   opportunityScore: number;
-  createdAt: Date;
+  createdAt: string;
 }
 
 export default function MissionControl() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [needsConfig, setNeedsConfig] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -41,270 +64,303 @@ export default function MissionControl() {
           apiFetch(`/api/overview?tenantId=${tenantId}`),
           apiFetch(`/api/signals?tenantId=${tenantId}`)
         ]);
-
-        if (!overviewRes.ok || !signalsRes.ok) throw new Error('Failed to fetch data');
-
-        const [overviewData, signalsData] = await Promise.all([
-          overviewRes.json(),
-          signalsRes.json()
-        ]);
-
+        if (overviewRes.status === 401 || signalsRes.status === 401) {
+          setNeedsConfig(true);
+          return;
+        }
+        if (!overviewRes.ok) throw new Error(`Overview fetch failed: ${overviewRes.status}`);
+        const [overviewData, signalsData] = await Promise.all([overviewRes.json(), signalsRes.json()]);
         setOverview(overviewData);
-        setSignals(signalsData.signals || []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setSignals(signalsData.signals ?? []);
+      } catch {
+        // keep showing data if we have it; only surface on first load
+        if (!overview) setNeedsConfig(false);
       } finally {
         setLoading(false);
       }
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 5000); // Refresh every 5s
+    const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  if (loading) return <MissionControlSkeleton />; // HARDENED: first dashboard fetch shows a structured skeleton instead of a blank/text-only load.
-  if (error) return <div className={styles.error}>Error: {error}</div>;
-  if (!overview) return <div className={styles.empty}>No data available</div>;
+  if (loading) return <MissionControlSkeleton />;
 
-  const portfolio = overview.portfolio || { equity: 0, cash: 0, totalExposure: 0, dailyPnl: 0, maxDrawdown: 0, openOrderCount: 0, positions: [] };
-  const equityHistory = (overview.portfolioHistory || []).map((snapshot) => ({
-    time: new Date(snapshot.capturedAt).toLocaleTimeString(),
-    equity: snapshot.equity
-  }));
-  const safety = overview.safety || { killSwitchActive: true, liveAuthorized: false };
-  const reconciliation = overview.reconciliation || { severeMismatchOpen: false };
-
-  const systemStatus = safety.killSwitchActive ? 'EMERGENCY' : reconciliation.severeMismatchOpen ? 'DEGRADED' : 'HEALTHY';
-  const tradingMode = safety.liveAuthorized ? 'LIVE' : 'PAPER';
-  const latestAuditAt = latestTimestamp(overview.audits ?? []);
-  const staleData = latestAuditAt !== undefined && Date.now() - latestAuditAt > 300_000; // HARDENED: stale scanner output is surfaced before operators act on old data.
-
-  return (
-    <div className={styles.container}>
-      {staleData && (
-        <Link href="/health" className={styles.staleBanner}>⚠ Data may be stale — scanner worker may be inactive. Check System Health.</Link>
-      )}
-      {/* Command Bar */}
-      <div className={styles.commandBar}>
-        <div className={styles.commandSection}>
-          <div className={styles.metric}>
-            <span className={styles.label}>Portfolio Equity</span>
-            <span className={styles.value}>${portfolio.equity?.toFixed(2) || '0.00'}</span>
-          </div>
-          <div className={styles.metric}>
-            <span className={styles.label}>Daily P&L</span>
-            <span className={`${styles.value} ${portfolio.dailyPnl >= 0 ? styles.positive : styles.negative}`}>
-              {portfolio.dailyPnl >= 0 ? '+' : ''}
-              ${portfolio.dailyPnl?.toFixed(2) || '0.00'}
-            </span>
-          </div>
-          <div className={styles.metric}>
-            <span className={styles.label}>Open Exposure</span>
-            <span className={styles.value}>${portfolio.totalExposure?.toFixed(2) || '0.00'}</span>
-          </div>
-          <div className={styles.metric}>
-            <span className={styles.label}>Open Positions</span>
-            <span className={styles.value}>{portfolio.openOrderCount || overview.orders?.length || 0}</span>
-          </div>
-        </div>
-
-        <div className={styles.commandSection}>
-          <div className={`${styles.status} ${styles[`status-${systemStatus.toLowerCase()}`]}`}>
-            {systemStatus}
-          </div>
-          <div className={styles.mode}>
-            {tradingMode}
-          </div>
-          <div className={`${styles.killSwitch} ${safety.killSwitchActive ? styles.active : ''}`}>
-            {safety.killSwitchActive ? 'ENGAGED' : 'CLEAR'}
+  if (needsConfig) {
+    return (
+      <div className={styles.configScreen}>
+        <div className={styles.configCard}>
+          <div className={styles.configLogo}><span>X</span>SPEC</div>
+          <h1 className={styles.configTitle}>Operator Terminal</h1>
+          <p className={styles.configText}>
+            The terminal requires an operator API key to connect to the backend. Add the following to your <code>.env</code> file and restart the dev server.
+          </p>
+          <div className={styles.configCode}>
+            NEXT_PUBLIC_OPERATOR_API_KEY=your_key_here<br />
+            NEXT_PUBLIC_TENANT_ID=system
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (!overview) return <MissionControlSkeleton />;
+
+  const portfolio = overview.portfolio ?? { equity: 0, cash: 0, totalExposure: 0, dailyPnl: 0, maxDrawdown: 0, openOrderCount: 0, positions: [] };
+  const equityHistory = (overview.portfolioHistory ?? []).map((s) => ({
+    time: new Date(s.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    equity: s.equity
+  }));
+  const safety = overview.safety ?? { killSwitchActive: true, liveAuthorized: false };
+  const reconciliation = overview.reconciliation ?? { severeMismatchOpen: false };
+
+  const systemStatus = safety.killSwitchActive ? 'EMERGENCY' : reconciliation.severeMismatchOpen ? 'DEGRADED' : 'HEALTHY';
+  const tradingMode = safety.liveAuthorized ? 'LIVE' : 'PAPER';
+  const staleData = latestTimestamp(overview.audits ?? []) !== undefined &&
+    Date.now() - latestTimestamp(overview.audits ?? [])! > 300_000;
+
+  const pnlPositive = portfolio.dailyPnl >= 0;
+  const pnlPrefix = pnlPositive ? '+' : '';
+
+  return (
+    <div className={styles.container}>
+      {/* Hero stat bar */}
+      <div className={styles.heroBar}>
+        <div className={styles.heroStat}>
+          <span className={styles.heroLabel}>Portfolio Equity</span>
+          <span className={styles.heroValue}>${portfolio.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </div>
+        <div className={styles.heroStat}>
+          <span className={styles.heroLabel}>Daily P&amp;L</span>
+          <span className={`${styles.heroValue} ${pnlPositive ? styles.positive : styles.negative}`}>
+            {pnlPrefix}${Math.abs(portfolio.dailyPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        </div>
+        <div className={styles.heroStat}>
+          <span className={styles.heroLabel}>System Status</span>
+          <div className={styles.heroBadges}>
+            <span className={`${styles.heroBadge} ${systemStatus === 'HEALTHY' ? styles.healthy : systemStatus === 'DEGRADED' ? styles.degraded : styles.emergency}`}>
+              <span className={styles.heroDot} />
+              {systemStatus}
+            </span>
+          </div>
+        </div>
+        <div className={styles.heroStat}>
+          <span className={styles.heroLabel}>Trading Mode</span>
+          <div className={styles.heroBadges}>
+            <span className={`${styles.heroBadge} ${tradingMode === 'LIVE' ? styles.live : styles.paper}`}>
+              {tradingMode}
+            </span>
+            <span className={`${styles.heroBadge} ${safety.killSwitchActive ? styles.engaged : styles.clear}`}>
+              {safety.killSwitchActive ? 'KILL' : 'CLEAR'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {staleData && (
+        <Link href="/health" className={styles.staleBanner}>
+          ⚠ Scanner data may be stale — last activity over 5 minutes ago. Check System Health.
+        </Link>
+      )}
 
       {/* Main Grid */}
       <div className={styles.mainGrid}>
         {/* Equity Curve */}
         <div className={`${styles.panel} ${styles.equityCurve}`}>
           <h2>Equity Curve</h2>
-          <div className={styles.chartContainer}>
-            {equityHistory.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
+          {equityHistory.length > 1 ? (
+            <div className={styles.chartContainer}>
+              <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={equityHistory}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" />
-                  <YAxis />
-                  <Tooltip />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e8e8e2" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#8a8a84' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#8a8a84' }} width={70} tickFormatter={(v) => `$${v.toLocaleString()}`} />
+                  <Tooltip formatter={(v: number) => [`$${v.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Equity']} />
                   <Line type="monotone" dataKey="equity" stroke="#ff6b35" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
-            ) : (
-              <div className={styles.empty}>No portfolio snapshots available</div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className={styles.emptyTimeline}>
+              <strong>No equity history yet</strong>
+              Waiting for first portfolio snapshot.
+            </div>
+          )}
         </div>
 
         {/* Opportunity Queue */}
         <div className={`${styles.panel} ${styles.opportunityQueue}`}>
           <h2>Opportunity Queue</h2>
-          <div className={styles.tableContainer}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Market</th>
-                  <th>Edge</th>
-                  <th>Confidence</th>
-                  <th>Spread</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {signals.slice(0, 5).map((signal, i) => (
-                  <tr key={i}>
-                    <td>
-                      <code>{signal.marketId.slice(0, 12)}...</code>
-                    </td>
-                    <td>
-                      <span className={`${styles.badge} ${signal.opportunityScore > 0.5 ? styles.high : ''}`}>
-                        {(signal.opportunityScore * 100).toFixed(1)}%
-                      </span>
-                    </td>
-                    <td>{(signal.confidence * 100).toFixed(1)}%</td>
-                    <td>{(signal.uncertainty * 100).toFixed(1)}%</td>
-                    <td>
-                      <span className={`${styles.badge} ${signal.riskApproved ? styles.approved : styles.pending}`}>
-                        {signal.riskApproved ? 'Ready' : 'Pending'}
-                      </span>
-                    </td>
+          {signals.length > 0 ? (
+            <div className={styles.tableContainer}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Market</th>
+                    <th>Score</th>
+                    <th>Conf.</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {signals.length === 0 && <div className={styles.empty}>No opportunities detected</div>}
-          </div>
-          <Link href="/opportunities" className={styles.linkButton}>
-            View Full Queue →
-          </Link>
+                </thead>
+                <tbody>
+                  {signals.slice(0, 6).map((signal, i) => (
+                    <tr key={i}>
+                      <td><code>{signal.marketId.slice(0, 14)}…</code></td>
+                      <td>
+                        <span className={signal.opportunityScore > 0 ? styles.edgePositive : styles.edgeNeutral}>
+                          {(signal.opportunityScore * 100).toFixed(1)}%
+                        </span>
+                      </td>
+                      <td>{(signal.confidence * 100).toFixed(1)}%</td>
+                      <td>
+                        <span className={`${styles.badge} ${signal.riskApproved ? styles.approved : styles.pending}`}>
+                          {signal.riskApproved ? 'Ready' : 'Pending'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className={styles.emptyTimeline}>
+              <strong>Waiting for scanner</strong>
+              Signals will appear here after the first scanner cycle completes.
+            </div>
+          )}
+          <Link href="/opportunities" className={styles.linkButton}>View Full Queue →</Link>
         </div>
 
         {/* Active Portfolio */}
         <div className={`${styles.panel} ${styles.activePortfolio}`}>
-          <h2>Active Portfolio</h2>
-          <div className={styles.tableContainer}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Market</th>
-                  <th>Side</th>
-                  <th>Quantity</th>
-                  <th>P&L</th>
-                  <th>Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {portfolio.positions?.slice(0, 5).map((pos: any, i: number) => (
-                  <tr key={i}>
-                    <td><code>{pos.marketId?.slice(0, 12) || 'N/A'}...</code></td>
-                    <td><span className={`${styles.badge} ${pos.side === 'YES' ? styles.long : styles.short}`}>{pos.side}</span></td>
-                    <td>{pos.quantity?.toFixed(2) || 0}</td>
-                    <td className={pos.marketValue >= 0 ? styles.positive : styles.negative}>
-                      ${(pos.marketValue || 0).toFixed(2)}
-                    </td>
-                    <td>
-                      <span className={`${styles.riskLevel} ${styles.medium}`}>●</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {portfolio.positions?.length === 0 && <div className={styles.empty}>No open positions</div>}
-          </div>
-          <Link href="/portfolio" className={styles.linkButton}>
-            View Portfolio →
-          </Link>
+          <h2>Active Positions</h2>
+          {portfolio.positions && portfolio.positions.length > 0 ? (
+            <div className={styles.tableContainer}>
+              <table className={styles.table}>
+                <thead>
+                  <tr><th>Market</th><th>Side</th><th>Qty</th><th>Value</th></tr>
+                </thead>
+                <tbody>
+                  {portfolio.positions.slice(0, 6).map((pos, i) => (
+                    <tr key={i}>
+                      <td><code>{pos.marketId?.slice(0, 14) ?? 'N/A'}…</code></td>
+                      <td><span className={`${styles.badge} ${pos.side === 'yes' ? styles.long : styles.short}`}>{pos.side?.toUpperCase()}</span></td>
+                      <td>{pos.quantity?.toFixed(2) ?? 0}</td>
+                      <td className={pos.marketValue >= 0 ? styles.edgePositive : styles.edgeNegative}>
+                        ${(pos.marketValue ?? 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className={styles.emptyTimeline}>
+              <strong>No open positions</strong>
+              Positions appear here once trades are executed.
+            </div>
+          )}
+          <Link href="/portfolio" className={styles.linkButton}>View Portfolio →</Link>
         </div>
 
         {/* Live Activity Feed */}
         <div className={`${styles.panel} ${styles.activityFeed}`}>
-          <h2>Live Activity</h2>
-          <div className={styles.timeline}>
-            {overview.audits?.slice(0, 5).map((audit: any, i: number) => (
-              <div key={i} className={styles.timelineItem}>
-                <div className={styles.timelineBullet} />
-                <div className={styles.timelineContent}>
-                  <div className={styles.timelineTime}>{new Date(audit.createdAt).toLocaleTimeString()}</div>
-                  <div className={styles.timelineEvent}>{audit.finalOutcome === 'trade' ? 'Trade Executed' : 'Decision Made'}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Link href="/audit" className={styles.linkButton}>
-            Full Audit Trail →
-          </Link>
+          <h2>Recent Decisions</h2>
+          {overview.audits && overview.audits.length > 0 ? (
+            <div className={styles.timeline}>
+              {overview.audits.slice(0, 6).map((audit, i) => {
+                const question = audit.scannerData?.question ?? audit.marketId;
+                const approved = audit.finalOutcome === 'trade' && audit.riskDecision?.approved;
+                const edge = audit.edgeCalculations?.penalizedEdge ?? audit.edgeCalculations?.edge;
+                return (
+                  <div key={i} className={styles.timelineItem}>
+                    <div className={styles.timelineBullet} />
+                    <div className={styles.timelineContent}>
+                      <div className={styles.timelineTime}>{new Date(audit.createdAt).toLocaleTimeString()}</div>
+                      <div className={styles.timelineEvent}>{truncate(question, 52)}</div>
+                      <div>
+                        <span className={`${styles.badge} ${approved ? styles.approved : styles.pending}`}>
+                          {approved ? 'TRADE' : 'SKIP'}
+                        </span>
+                        {typeof edge === 'number' && (
+                          <span className={edge > 0 ? styles.edgePositive : styles.edgeNeutral} style={{ fontSize: '11px', marginLeft: '6px' }}>
+                            edge {(edge * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={styles.emptyTimeline}>
+              <strong>Waiting for first scanner cycle</strong>
+              Decisions will appear here as markets are evaluated.
+            </div>
+          )}
+          <Link href="/audit" className={styles.linkButton}>Full Audit Trail →</Link>
         </div>
       </div>
 
-      {/* Risk & Reconciliation Summary */}
+      {/* Bottom Grid */}
       <div className={styles.bottomGrid}>
-        {/* Risk Fortress Summary */}
         <div className={`${styles.panel} ${styles.riskSummary}`}>
           <h2>Risk Fortress</h2>
           <div className={styles.gatesList}>
-            {!reconciliation.severeMismatchOpen && !safety.killSwitchActive && (
+            {!reconciliation.severeMismatchOpen && !safety.killSwitchActive ? (
               <div className={styles.gate}>
                 <span className={styles.gateStatus}>✓</span>
-                <span>Safety Gates Clear</span>
+                <span>All safety gates clear</span>
               </div>
-            )}
+            ) : null}
             {reconciliation.severeMismatchOpen && (
               <div className={`${styles.gate} ${styles.failed}`}>
                 <span className={styles.gateStatus}>✗</span>
-                <span>Reconciliation Gate</span>
+                <span>Reconciliation gate blocked</span>
               </div>
             )}
             {safety.killSwitchActive && (
               <div className={`${styles.gate} ${styles.failed}`}>
                 <span className={styles.gateStatus}>✗</span>
-                <span>Kill Switch Gate</span>
+                <span>Kill switch engaged</span>
               </div>
             )}
           </div>
-          <Link href="/configuration" className={styles.linkButton}>
-            Configure Gates →
-          </Link>
+          <Link href="/configuration" className={styles.linkButton}>Configure Gates →</Link>
         </div>
 
-        {/* Reconciliation Center */}
         <div className={`${styles.panel} ${styles.reconciliationSummary}`}>
-          <h2>Reconciliation Status</h2>
+          <h2>Reconciliation</h2>
           <div className={`${styles.reconciliationStatus} ${reconciliation.severeMismatchOpen ? styles.warning : styles.healthy}`}>
-            {reconciliation.severeMismatchOpen ? 'SEVERE MISMATCH OPEN' : 'MATCHED'}
+            {reconciliation.severeMismatchOpen ? '⚠ MISMATCH OPEN' : '✓ MATCHED'}
           </div>
           {reconciliation.incident && (
             <div className={styles.incidentInfo}>
-              <p><strong>Issue:</strong> Venue and local state divergence detected</p>
-              <p><strong>Status:</strong> {reconciliation.incident.acknowledgedAt ? 'Acknowledged' : 'Pending Operator Review'}</p>
+              <p><strong>Issue:</strong> Venue and local state divergence</p>
+              <p><strong>Status:</strong> {reconciliation.incident.acknowledgedAt ? 'Acknowledged' : 'Pending Review'}</p>
             </div>
           )}
-          <Link href="/reconciliation" className={styles.linkButton}>
-            View Details →
-          </Link>
+          <Link href="/reconciliation" className={styles.linkButton}>View Details →</Link>
         </div>
 
-        {/* Worker Health */}
         <div className={`${styles.panel} ${styles.workerHealth}`}>
           <h2>Worker Health</h2>
           <div className={styles.workersList}>
-            {overview.workers?.slice(0, 4).map((worker: any) => (
-              <div key={worker.worker} className={`${styles.workerItem} ${worker.status === 'ok' ? styles.healthy : styles.error}`}>
-                <span className={styles.workerDot}></span>
-                <span>{worker.worker}</span>
-              </div>
-            ))}
+            {overview.workers && overview.workers.length > 0 ? (
+              overview.workers.slice(0, 5).map((worker) => (
+                <div key={worker.worker} className={`${styles.workerItem} ${worker.status === 'ok' ? styles.healthy : styles.error}`}>
+                  <span className={styles.workerDot} />
+                  <span>{worker.worker.replace('-worker', '')}</span>
+                </div>
+              ))
+            ) : (
+              <div className={styles.empty}>No worker heartbeats yet</div>
+            )}
           </div>
-          <Link href="/health" className={styles.linkButton}>
-            Full Health Report →
-          </Link>
+          <Link href="/health" className={styles.linkButton}>Full Health Report →</Link>
         </div>
       </div>
     </div>
@@ -323,7 +379,11 @@ function MissionControlSkeleton() {
 
 function latestTimestamp(audits: Array<{ createdAt?: string | Date }>): number | undefined {
   const times = audits
-    .map((audit) => audit.createdAt ? new Date(audit.createdAt).getTime() : Number.NaN)
-    .filter((time) => Number.isFinite(time));
+    .map((a) => a.createdAt ? new Date(a.createdAt).getTime() : Number.NaN)
+    .filter(Number.isFinite);
   return times.length ? Math.max(...times) : undefined;
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }

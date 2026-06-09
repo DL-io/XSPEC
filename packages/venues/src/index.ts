@@ -355,12 +355,13 @@ export class KalshiConnector implements VenueConnector {
 
   async fetchOrderbook(marketId: string): Promise<OrderbookSnapshot> {
     const ticker = encodeURIComponent(marketId.replace(/^kalshi:/, ''));
-    const payload = await getJson<{ orderbook: { yes?: [number, number][]; no?: [number, number][] } }>(`${this.apiUrl}/markets/${ticker}/orderbook`);
+    const payload = await getJson<{ orderbook?: { yes?: [number, number][]; no?: [number, number][] } }>(`${this.apiUrl}/markets/${ticker}/orderbook`);
+    const book = payload.orderbook ?? {};
     return {
       marketId,
       source: this.id,
-      bids: (payload.orderbook.yes ?? []).map(([price, size]) => ({ price: price / 100, size })),
-      asks: (payload.orderbook.no ?? []).map(([price, size]) => ({ price: 1 - price / 100, size })),
+      bids: (book.yes ?? []).map(([price, size]) => ({ price: price / 100, size })),
+      asks: (book.no ?? []).map(([price, size]) => ({ price: 1 - price / 100, size })),
       capturedAt: new Date()
     };
   }

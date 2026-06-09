@@ -239,6 +239,10 @@
   color: #f44336;
 }
 
+.edgePositive { color: #16a34a; font-weight: 600; }
+.edgeNeutral  { color: #8a8a84; }
+.edgeNegative { color: #dc2626; }
+
 .chartContainer {
   background: #fafaf8;
   border: 1px solid #e8e8e0;
