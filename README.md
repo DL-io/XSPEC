@@ -2,6 +2,40 @@
 
 TypeScript prediction-market trading infrastructure for Polymarket and Kalshi. The repo contains a Next.js operator terminal, venue connectors, scanner/research/execution/reconciliation workers, Drizzle/MySQL persistence, Redis-backed API controls, and risk gates.
 
+## Quick Start
+
+**macOS — double-click:**
+
+```
+XSPEC.command          # launch full stack (workers + terminal + browser)
+XSPEC-stop.command     # stop all processes
+XSPEC-status.command   # show pm2 status + worker heartbeats
+```
+
+**CLI:**
+
+```bash
+make start     # launch full stack
+make stop      # stop all processes
+make status    # pm2 status + /api/health
+make logs      # tail pm2 logs
+make restart   # pm2 restart all
+make e2e       # run paper:e2e test suite
+make deploy    # deploy:check + railway up
+```
+
+**Manual:**
+
+```bash
+pnpm install
+pnpm check
+pnpm preflight
+pm2 start ecosystem.config.cjs
+open http://localhost:3000
+```
+
+Requires `.env` with `DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`, `ENCRYPTION_KEY`. See [ENVIRONMENT.md](ENVIRONMENT.md).
+
 ## Architecture
 
 - `apps/terminal`: operator dashboard and API routes
