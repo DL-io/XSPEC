@@ -12,11 +12,14 @@ if [[ -f .env ]]; then
   set -a; source .env; set +a
 fi
 
+PM2_BIN="./node_modules/.bin/pm2"
+[[ ! -x "$PM2_BIN" ]] && command -v pm2 &>/dev/null && PM2_BIN="pm2"
+
 printf "\n  ${OR}${B}XSPEC${R}  System Status  ${DIM}$(date '+%Y-%m-%d %H:%M:%S')${R}\n\n"
 
 # ── pm2 status ────────────────────────────────────────────────────────────────
 printf "  ${B}Processes${R}\n\n"
-pm2_json=$(pm2 jlist 2>/dev/null || echo "[]")
+pm2_json=$("$PM2_BIN" jlist 2>/dev/null || echo "[]")
 services=(terminal scanner research execution reconciliation calibration alerts)
 for svc in "${services[@]}"; do
   full="polyshore-${svc}"

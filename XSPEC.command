@@ -51,16 +51,19 @@ else
   printf "    ${FAIL}  %-10s  ${RED}not found${R}\n" "pnpm"
 fi
 
-if command -v pm2 &>/dev/null; then
+PM2_BIN="./node_modules/.bin/pm2"
+if [[ -x "$PM2_BIN" ]]; then
+  pm2_ver=$("$PM2_BIN" --version 2>/dev/null)
+  printf "    ${OK}  %-10s  ${DIM}%s (local)${R}\n" "pm2" "$pm2_ver"
+  pm2_ok=true
+elif command -v pm2 &>/dev/null; then
+  PM2_BIN="pm2"
   pm2_ver=$(pm2 --version 2>/dev/null)
-  printf "    ${OK}  %-10s  ${DIM}%s${R}\n" "pm2" "$pm2_ver"
+  printf "    ${OK}  %-10s  ${DIM}%s (global)${R}\n" "pm2" "$pm2_ver"
   pm2_ok=true
 else
-  printf "    ${FAIL}  %-10s  ${RED}not found — run: npm install -g pm2${R}\n" "pm2"
-  printf "\n  ${RED}${B}pm2 is required. Open a new terminal and run:${R}\n"
-  printf "  ${YL}  npm install -g pm2${R}\n\n"
-  read -rp "  Press Enter to exit and install pm2 first…"
-  exit 1
+  printf "    ${FAIL}  %-10s  ${RED}not found — will install via pnpm${R}\n" "pm2"
+  pm2_ok=false
 fi
 
 printf "\n"
@@ -76,6 +79,20 @@ if [[ ! -d node_modules ]] || [[ pnpm-lock.yaml -nt node_modules/.modules.yaml ]
   printf "  ${YL}Installing dependencies…${R}\n\n"
   pnpm install
   printf "\n"
+fi
+
+# Resolve pm2 after install if it wasn't found before
+if [[ "$pm2_ok" == false ]]; then
+  PM2_BIN="./node_modules/.bin/pm2"
+  if [[ -x "$PM2_BIN" ]]; then
+    pm2_ver=$("$PM2_BIN" --version 2>/dev/null)
+    printf "    ${OK}  %-10s  ${DIM}%s (installed by pnpm)${R}\n\n" "pm2" "$pm2_ver"
+    pm2_ok=true
+  else
+    printf "  ${RED}${B}pm2 could not be found. Run: pnpm install${R}\n\n"
+    read -rp "  Press Enter to exit…"
+    exit 1
+  fi
 fi
 
 # ── connectivity checks ───────────────────────────────────────────────────────
@@ -131,8 +148,8 @@ fi
 
 # ── start via pm2 ─────────────────────────────────────────────────────────────
 printf "  ${B}Starting XSPEC…${R}\n\n"
-pm2 delete all 2>/dev/null || true
-pm2 start ecosystem.config.cjs
+"$PM2_BIN" delete all 2>/dev/null || true
+"$PM2_BIN" start ecosystem.config.cjs
 printf "\n"
 
 # ── wait for health endpoint ──────────────────────────────────────────────────
@@ -154,14 +171,14 @@ if [[ "$ready" == true ]]; then
   open http://localhost:3000
 else
   printf "  ${FAIL}  Terminal did not respond within 30s\n"
-  printf "       ${DIM}pm2 logs polyshore-terminal${R}\n"
+  printf "       ${DIM}$PM2_BIN logs polyshore-terminal${R}\n"
 fi
 
 printf "\n"
 
 # ── final status table ────────────────────────────────────────────────────────
 printf "  ${B}Service Status${R}\n\n"
-pm2_json=$(pm2 jlist 2>/dev/null || echo "[]")
+pm2_json=$("$PM2_BIN" jlist 2>/dev/null || echo "[]")
 services=(terminal scanner research execution reconciliation calibration alerts)
 for svc in "${services[@]}"; do
   full="polyshore-${svc}"
@@ -187,4 +204,4 @@ printf "  ${DIM}Stop: double-click XSPEC-stop.command  ·  Logs below${R}\n"
 printf "  ${DIM}────────────────────────────────────────────────────${R}\n\n"
 
 # ── tail logs (keeps window open) ────────────────────────────────────────────
-pm2 logs
+"$PM2_BIN" logs

@@ -4,7 +4,7 @@ import { ApiKeyRepository, createDb } from '@polyshore/db';
 import { createClient, type RedisClientType } from 'redis';
 
 const DEFAULT_RATE_LIMIT_PER_MINUTE = 120;
-const LOCAL_DEV_ROLE_HEADERS = process.env.NODE_ENV !== 'production' && process.env.TRUST_OPERATOR_ROLE_HEADERS === 'true';
+const LOCAL_DEV_ROLE_HEADERS = process.env.TRUST_OPERATOR_ROLE_HEADERS === 'true';
 const trustedProxyHops = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
 let redisClient: Promise<RedisClientType> | undefined;
 

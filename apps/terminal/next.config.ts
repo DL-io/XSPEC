@@ -1,4 +1,9 @@
 import type { NextConfig } from 'next';
+import { resolve } from 'path';
+import { config as loadDotenv } from 'dotenv';
+
+// Next.js only auto-loads .env from the app directory; load from monorepo root
+loadDotenv({ path: resolve(new URL('../..', import.meta.url).pathname, '.env'), override: false });
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: new URL('../..', import.meta.url).pathname,
