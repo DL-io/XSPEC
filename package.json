@@ -22,7 +22,8 @@
     "simulate": "./node_modules/.bin/tsx scripts/simulate.ts",
     "validate-config": "./node_modules/.bin/tsx scripts/validate-config.ts",
     "paper:e2e": "./node_modules/.bin/tsx scripts/paper-e2e.ts",
-    "deploy:check": "./node_modules/.bin/tsx scripts/deploy-check.ts"
+    "deploy:check": "./node_modules/.bin/tsx scripts/deploy-check.ts",
+    "backtest": "./node_modules/.bin/tsx scripts/backtest.ts"
   },
   "dependencies": {
     "@polymarket/clob-client-v2": "^1.0.6",

@@ -1,5 +1,5 @@
 import { loadConfig } from '@polyshore/config';
-import { ConfigOverrideRepository, createDb, MarketRepository, PortfolioRepository } from '@polyshore/db';
+import { CalibrationRecordRepository, ConfigOverrideRepository, createDb, MarketRepository, PerformanceRepository, PortfolioRepository } from '@polyshore/db';
 import { PolymarketConnector, KalshiConnector } from '@polyshore/venues';
 import { applyOrderbookSnapshot, evaluateScannerGates } from '@polyshore/scanner';
 import { logInfo } from '@polyshore/observability';
@@ -12,6 +12,8 @@ const db = createDb(config.DATABASE_URL);
 const marketRepository = new MarketRepository(db);
 const portfolioRepository = new PortfolioRepository(db);
 const safetyRepository = new ConfigOverrideRepository(db);
+const performanceRepo = new PerformanceRepository(db);
+const calibrationRepo = new CalibrationRecordRepository(db);
 const researchStages = createResearchStagesFromConfig(config);
 const connectors = [
   new PolymarketConnector(config.POLYMARKET_GAMMA_URL, config.POLYMARKET_CLOB_URL, 'system'),
@@ -20,6 +22,11 @@ const connectors = [
 
 async function scanOnce() {
   const safety = await safetyRepository.readSafetyState(tenantId);
+  // Fetch per-model performance history and calibration data once per cycle to avoid N queries per market
+  const [modelPerformanceRecords, calibrationData] = await Promise.all([
+    performanceRepo.getModelPerformanceRecords(tenantId, 200),
+    calibrationRepo.getRecentResolved(50)
+  ]);
   for (const connector of connectors) {
     const markets = await connector.fetchMarkets();
     let accepted = 0;
@@ -45,7 +52,9 @@ async function scanOnce() {
           severeAnomaly: false,
           capturedOrderbook: book,
           liveActivationConfirmedAt: safety.liveActivationConfirmedAt,
-          researchStages
+          researchStages,
+          modelPerformanceRecords,
+          calibrationData
         });
       }
       accepted += 1;

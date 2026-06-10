@@ -52,7 +52,23 @@ export function degradedResearchStages(reason: string): Record<string, ResearchS
   };
 }
 
-export function createResearchStages(input: { webProvider?: WebResearchProvider; reasoningProvider?: LlmReasoningProvider }): Record<string, ResearchStage> {
+const POSITIVE_WORDS = new Set(['win', 'pass', 'approve', 'confirmed', 'likely', 'bullish', 'positive', 'success', 'advance', 'achieve', 'exceed', 'surpass', 'rally', 'gain', 'rise', 'increase', 'yes', 'signed', 'enacted', 'agreed']);
+const NEGATIVE_WORDS = new Set(['fail', 'reject', 'decline', 'unlikely', 'bearish', 'negative', 'loss', 'block', 'veto', 'collapse', 'drop', 'fall', 'decrease', 'no', 'denied', 'withdrawn', 'missed', 'delayed', 'canceled']);
+
+function scoreSentimentFromFacts(facts: MarketDossier['currentFacts']): number {
+  if (facts.length === 0) return 0;
+  let score = 0;
+  for (const fact of facts) {
+    const tokens = fact.claim.toLowerCase().split(/\W+/);
+    for (const token of tokens) {
+      if (POSITIVE_WORDS.has(token)) score += 1;
+      if (NEGATIVE_WORDS.has(token)) score -= 1;
+    }
+  }
+  return Math.max(-1, Math.min(1, score / (facts.length * 3)));
+}
+
+export function createResearchStages(input: { webProvider?: WebResearchProvider; reasoningProvider?: LlmReasoningProvider; memoryMatches?: MarketDossier['marketMemoryMatches'] }): Record<string, ResearchStage> {
   if (!input.webProvider || !input.reasoningProvider) return degradedResearchStages('research providers unavailable');
   let facts: MarketDossier['currentFacts'] = [];
   return {
@@ -72,14 +88,22 @@ export function createResearchStages(input: { webProvider?: WebResearchProvider;
         informationAge: result?.informationAge ?? market.dataFreshnessMs
       };
     },
-    base_rate_calculator: async (market) => ({ baseRate: market.midpoint }),
-    sentiment_analyzer: async () => ({ sentimentSignal: 0 }),
+    base_rate_calculator: async (market) => {
+      const ambiguity = resolutionAmbiguityScore(market.resolutionCriteria);
+      const daysToResolution = Math.max(0, (market.resolutionDate.getTime() - Date.now()) / 86_400_000);
+      // Markets near resolution with clear criteria: trust market price as base rate
+      // Long-horizon or ambiguous markets: regress toward 0.5 base rate prior
+      const certaintyFactor = Math.min(1, 1 / (1 + daysToResolution / 30)) * (1 - ambiguity * 0.5);
+      const baseRate = market.midpoint * certaintyFactor + 0.5 * (1 - certaintyFactor);
+      return { baseRate };
+    },
+    sentiment_analyzer: async () => ({ sentimentSignal: scoreSentimentFromFacts(facts) }),
     microstructure_analyzer: async (market) => ({ microstructureSignal: market.bidDepth1Pct - market.askDepth1Pct }),
     catalyst_forecaster: async (market) => ({
       catalysts: market.tags,
       keyDrivers: [market.category, ...facts.slice(0, 3).map((fact) => fact.claim)].filter(Boolean)
     }),
-    memory_matcher: async () => ({ marketMemoryMatches: [] }),
+    memory_matcher: async () => ({ marketMemoryMatches: input.memoryMatches ?? [] }),
     deep_reasoner: async (market) => {
       const reasoning = await input.reasoningProvider?.reason(market, facts);
       return reasoning ?? {};
@@ -87,11 +111,11 @@ export function createResearchStages(input: { webProvider?: WebResearchProvider;
   };
 }
 
-export function createResearchStagesFromConfig(config: ResearchProviderConfig): Record<string, ResearchStage> {
-  return createResearchStages(configuredResearchProviders(config));
+export function createResearchStagesFromConfig(config: ResearchProviderConfig, memoryMatches?: MarketDossier['marketMemoryMatches']): Record<string, ResearchStage> {
+  return createResearchStages({ ...configuredResearchProviders(config), memoryMatches });
 }
 
-export async function buildDossier(market: NormalizedMarket, stages: Record<string, ResearchStage>, timeoutMs = 45_000): Promise<MarketDossier> {
+export async function buildDossier(market: NormalizedMarket, stages: Record<string, ResearchStage>, timeoutMs = 45_000, memoryMatches?: MarketDossier['marketMemoryMatches']): Promise<MarketDossier> {
   assertRequiredStages(stages);
   const started = Date.now();
   const partial: Partial<MarketDossier> = {};
@@ -136,7 +160,7 @@ export async function buildDossier(market: NormalizedMarket, stages: Record<stri
     contraryCase: partial.contraryCase ?? '',
     steelmanRebuttal: partial.steelmanRebuttal ?? '',
     identifiedBlindSpots: partial.identifiedBlindSpots ?? [],
-    marketMemoryMatches: partial.marketMemoryMatches ?? [],
+    marketMemoryMatches: memoryMatches ?? partial.marketMemoryMatches ?? [],
     stagesCompleted,
     stageFailures,
     skipRecommended: partial.skipRecommended ?? (hasCriticalResearchFailure(stageFailures) || stageFailures.length > 3 || ambiguity >= 0.4),

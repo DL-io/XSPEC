@@ -1,8 +1,8 @@
 import type { DecisionAudit, MandateId, NormalizedMarket, OperatingMode, OrderbookSnapshot, PortfolioState } from '@polyshore/core';
 import { assertCompleteDecisionAudit } from '../../../packages/audit/src/index.ts';
-import { DossierRepository, type OmegaDb, DecisionAuditRepository, MarketFeatureRepository, OrderbookRepository, ProbabilityEstimateRepository, RiskEventRepository } from '../../../packages/db/src/index.ts';
+import { DossierRepository, type OmegaDb, DecisionAuditRepository, MarketFeatureRepository, MarketMemoryRepository, OrderbookRepository, ProbabilityEstimateRepository, RiskEventRepository } from '../../../packages/db/src/index.ts';
 import { computeFeatureSnapshot } from '../../../packages/features/src/index.ts';
-import { buildEnsemble, generateModelEstimates } from '../../../packages/models/src/index.ts';
+import { buildEnsemble, computeCalibrationAdjustment, computeModelWeights, generateModelEstimates, type CalibrationDataPoint, type ModelPerformanceRecord } from '../../../packages/models/src/index.ts';
 import { proposeTrade } from '../../../packages/portfolio/src/index.ts';
 import { buildDossier, defaultResearchStages, type ResearchStage } from '../../../packages/research/src/index.ts';
 import { evaluateRisk } from '../../../packages/risk/src/index.ts';
@@ -22,6 +22,8 @@ export interface PipelineConfig {
   liveActivationConfirmedAt?: Date;
   capturedOrderbook?: OrderbookSnapshot;
   researchStages?: Record<string, ResearchStage>;
+  modelPerformanceRecords?: ModelPerformanceRecord[];
+  calibrationData?: CalibrationDataPoint[];
   now?: Date;
 }
 
@@ -31,11 +33,32 @@ export async function evaluateMarketPipeline(db: OmegaDb, market: NormalizedMark
   if (config.capturedOrderbook) await new OrderbookRepository(db).put(config.capturedOrderbook);
   await new MarketFeatureRepository(db).put(featureSnapshot);
   const marketWithFeatures = { ...market, featureSnapshot };
-  const dossier = await buildDossier(marketWithFeatures, config.researchStages ?? defaultResearchStages());
+
+  // Fetch memory matches for this market so historical_analog has real data
+  const memoryMatches = await new MarketMemoryRepository(db).searchByTextSimilarity(
+    `${market.question} ${market.resolutionCriteria}`, 5
+  );
+  const stagesWithMemory = config.researchStages
+    ? config.researchStages
+    : defaultResearchStages();
+
+  const dossier = await buildDossier(marketWithFeatures, stagesWithMemory, 45_000, memoryMatches);
   const dossierId = await new DossierRepository(db).put(dossier);
-  const modelEstimates = generateModelEstimates({ market: marketWithFeatures, dossier, featureSnapshot });
+
+  // Apply Bayesian confidence weights if historical performance data is available
+  const weightOverrides = config.modelPerformanceRecords?.length
+    ? computeModelWeights(config.modelPerformanceRecords)
+    : undefined;
+
+  const modelEstimates = generateModelEstimates({ market: marketWithFeatures, dossier, featureSnapshot, weightOverrides });
   await new ProbabilityEstimateRepository(db).putMany({ tenantId: config.tenantId, marketId: market.id, estimates: modelEstimates, createdAt: now });
-  const ensembleOutput = buildEnsemble(modelEstimates);
+
+  // Apply Platt-scaling calibration adjustment if sufficient historical data is available
+  const rawEnsemble = buildEnsemble(modelEstimates);
+  const calibrationAdjustment = config.calibrationData?.length
+    ? computeCalibrationAdjustment(rawEnsemble.ensembleProbability, config.calibrationData)
+    : 0;
+  const ensembleOutput = calibrationAdjustment !== 0 ? buildEnsemble(modelEstimates, calibrationAdjustment) : rawEnsemble;
   const tradeProposal = proposeTrade(marketWithFeatures, ensembleOutput, config.portfolio, config.mandateId);
   const riskDecision = evaluateRisk({
     mode: config.mode,

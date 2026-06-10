@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import type { AlertEvent, ApiClient, CalibrationRecord, DecisionAudit, ExecutionAuditResult, FeatureSnapshot, MarketDossier, MemoryMatch, ModelEstimate, NewOrder, NormalizedMarket, OrderbookSnapshot, OrderLifecycleState, Playbook, PortfolioState, Position, ReconciliationAuditStatus, ResearchPack, RiskDecision, Tenant, UsageMetric, User } from '@polyshore/core';
 import type { LiveOrderStore } from '@polyshore/execution';
@@ -613,6 +613,26 @@ export class PerformanceRepository {
       sharpness: rows.reduce((sum, row) => sum + row.sharpness, 0) / rows.length
     };
   }
+
+  async getModelPerformanceRecords(tenantId: string, limit = 200): Promise<Array<{ modelId: string; probability: number; outcome: 0 | 1 }>> {
+    const recent = await this.db.select({ marketId: calibrationRecords.marketId, outcome: calibrationRecords.outcome })
+      .from(calibrationRecords)
+      .orderBy(desc(calibrationRecords.resolvedAt))
+      .limit(limit);
+    if (!recent.length) return [];
+    const marketIds = recent.map((r) => r.marketId);
+    const outcomeMap = new Map(recent.map((r) => [r.marketId, r.outcome as 0 | 1]));
+    const estimates = await this.db.select({
+      modelId: probabilityEstimates.modelId,
+      probability: probabilityEstimates.probability,
+      marketId: probabilityEstimates.marketId
+    })
+      .from(probabilityEstimates)
+      .where(and(eq(probabilityEstimates.tenantId, tenantId), inArray(probabilityEstimates.marketId, marketIds)));
+    return estimates
+      .filter((e) => outcomeMap.has(e.marketId))
+      .map((e) => ({ modelId: e.modelId, probability: e.probability, outcome: outcomeMap.get(e.marketId)! }));
+  }
 }
 
 export class PositionRepository {
@@ -656,6 +676,14 @@ export class CalibrationRecordRepository {
     const rows = await this.db.select().from(calibrationRecords).where(eq(calibrationRecords.marketId, marketId)).orderBy(desc(calibrationRecords.resolvedAt));
     return rows as CalibrationRecord[];
   }
+
+  async getRecentResolved(limit = 50): Promise<Array<{ predictedProbability: number; outcome: 0 | 1 }>> {
+    const rows = await this.db.select({
+      predictedProbability: calibrationRecords.predictedProbability,
+      outcome: calibrationRecords.outcome
+    }).from(calibrationRecords).orderBy(desc(calibrationRecords.resolvedAt)).limit(limit);
+    return rows.map((r) => ({ predictedProbability: r.predictedProbability, outcome: r.outcome as 0 | 1 }));
+  }
 }
 
 export class MarketMemoryRepository {
@@ -683,6 +711,26 @@ export class MarketMemoryRepository {
       outcome: row.outcome === null ? undefined : row.outcome as 0 | 1 | undefined,
       embedding: row.embedding,
       createdAt: row.createdAt
+    }));
+  }
+
+  async searchByTextSimilarity(query: string, limit = 5): Promise<MemoryMatch[]> {
+    const rows = await this.db.select({ marketId: marketMemory.marketId, text: marketMemory.text, outcome: marketMemory.outcome }).from(marketMemory).limit(500);
+    const queryTokens = new Set(tokenizeText(query));
+    if (queryTokens.size === 0) return [];
+    const scored = rows.map((row) => ({
+      marketId: row.marketId,
+      text: row.text,
+      outcome: row.outcome,
+      similarity: jaccardSimilarity(queryTokens, new Set(tokenizeText(row.text)))
+    })).filter((r) => r.similarity > 0.1);
+    scored.sort((a, b) => b.similarity - a.similarity);
+    return scored.slice(0, limit).map((r) => ({
+      marketId: r.marketId,
+      question: r.text,
+      resolutionCriteria: r.text,
+      similarity: r.similarity,
+      outcome: r.outcome === null ? undefined : r.outcome as 0 | 1 | undefined
     }));
   }
 }
@@ -908,4 +956,14 @@ export class WorkerHealthRepository {
     }
     return [...byWorker.values()].sort((a, b) => a.worker.localeCompare(b.worker));
   }
+}
+
+function tokenizeText(text: string): string[] {
+  return text.toLowerCase().split(/\W+/).filter((t) => t.length > 3);
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  const intersection = [...a].filter((t) => b.has(t)).length;
+  const union = new Set([...a, ...b]).size;
+  return union === 0 ? 0 : intersection / union;
 }
