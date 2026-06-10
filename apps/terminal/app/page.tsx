@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiFetch, tenantId } from './api-client';
-import styles from './mission-control.module.css';
 
 interface OverviewData {
   safety: { killSwitchActive: boolean; killSwitchReason?: string; liveAuthorized: boolean };
@@ -12,7 +11,7 @@ interface OverviewData {
   portfolio: { equity: number; cash: number; totalExposure: number; dailyPnl: number; maxDrawdown: number; openOrderCount: number; positions: Position[] } | null;
   portfolioHistory: Array<{ equity: number; capturedAt: string }>;
   audits: Audit[];
-  orders: unknown[];
+  orders: Order[];
   workers: Worker[];
 }
 
@@ -24,6 +23,16 @@ interface Audit {
   edgeCalculations?: { edge?: number; penalizedEdge?: number };
   riskDecision?: { approved: boolean };
   finalOutcome: 'trade' | 'skip';
+  createdAt: string;
+}
+
+interface Order {
+  id: string;
+  marketId: string;
+  side: string;
+  quantity: number;
+  limitPrice: number;
+  state: string;
   createdAt: string;
 }
 
@@ -50,206 +59,266 @@ interface Signal {
   createdAt: string;
 }
 
-export default function MissionControl() {
+function fmt(n: number) {
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export default function Dashboard() {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [needsConfig, setNeedsConfig] = useState(false);
+  const [emergencyModal, setEmergencyModal] = useState(false);
+  const [safetyPending, setSafetyPending] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setLoading(true);
         const [overviewRes, signalsRes] = await Promise.all([
           apiFetch(`/api/overview?tenantId=${tenantId}`),
           apiFetch(`/api/signals?tenantId=${tenantId}`)
         ]);
-        if (overviewRes.status === 401 || signalsRes.status === 401) {
-          setNeedsConfig(true);
-          return;
-        }
-        if (!overviewRes.ok) throw new Error(`Overview fetch failed: ${overviewRes.status}`);
+        if (overviewRes.status === 401) { setNeedsConfig(true); setLoading(false); return; }
+        if (!overviewRes.ok) throw new Error();
         const [overviewData, signalsData] = await Promise.all([overviewRes.json(), signalsRes.json()]);
         setOverview(overviewData);
         setSignals(signalsData.signals ?? []);
-      } catch {
-        // keep showing data if we have it; only surface on first load
-        if (!overview) setNeedsConfig(false);
-      } finally {
+      } catch { /* keep stale data on error */ } finally {
         setLoading(false);
       }
     };
-
     fetchData();
-    const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
+    const id = setInterval(fetchData, 5000);
+    return () => clearInterval(id);
   }, []);
 
-  if (loading) return <MissionControlSkeleton />;
+  async function patchSafety(patch: Record<string, unknown>) {
+    setSafetyPending(true);
+    try {
+      await apiFetch('/api/safety', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantId, ...patch }) });
+      const res = await apiFetch(`/api/overview?tenantId=${tenantId}`);
+      if (res.ok) setOverview(await res.json());
+    } catch { /* show stale */ } finally {
+      setSafetyPending(false);
+    }
+  }
+
+  if (loading) return <DashboardSkeleton />;
 
   if (needsConfig) {
     return (
-      <div className={styles.configScreen}>
-        <div className={styles.configCard}>
-          <div className={styles.configLogo}><span>X</span>SPEC</div>
-          <h1 className={styles.configTitle}>Operator Terminal</h1>
-          <p className={styles.configText}>
-            The terminal requires an operator API key to connect to the backend. Add the following to your <code>.env</code> file and restart the dev server.
-          </p>
-          <div className={styles.configCode}>
-            NEXT_PUBLIC_OPERATOR_API_KEY=your_key_here<br />
-            NEXT_PUBLIC_TENANT_ID=system
+      <div style={{ display: 'grid', placeItems: 'center', minHeight: '80vh' }}>
+        <div className="panel" style={{ maxWidth: 480, textAlign: 'center', padding: 36 }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 32, fontWeight: 700, color: 'var(--accent)', marginBottom: 12 }}>
+            <em style={{ fontStyle: 'normal' }}>X</em>SPEC
           </div>
+          <h2 style={{ margin: '0 0 10px', fontSize: 18 }}>API Key Required</h2>
+          <p style={{ color: 'var(--text-2)', lineHeight: 1.6, marginBottom: 20 }}>
+            Add the following to your <code style={{ background: 'var(--surface-2)', padding: '2px 6px', borderRadius: 4 }}>.env</code> file and restart.
+          </p>
+          <pre style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 16, textAlign: 'left', fontSize: 12, fontFamily: 'var(--mono)', color: 'var(--text-2)' }}>
+            {`NEXT_PUBLIC_OPERATOR_API_KEY=your_key\nNEXT_PUBLIC_TENANT_ID=system`}
+          </pre>
         </div>
       </div>
     );
   }
 
-  if (!overview) return <MissionControlSkeleton />;
+  if (!overview) return <DashboardSkeleton />;
 
   const portfolio = overview.portfolio ?? { equity: 0, cash: 0, totalExposure: 0, dailyPnl: 0, maxDrawdown: 0, openOrderCount: 0, positions: [] };
+  const safety = overview.safety ?? { killSwitchActive: true, liveAuthorized: false };
+  const recon = overview.reconciliation ?? { severeMismatchOpen: false };
   const equityHistory = (overview.portfolioHistory ?? []).map((s) => ({
     time: new Date(s.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    equity: s.equity
+    equity: parseFloat(s.equity.toFixed(2))
   }));
-  const safety = overview.safety ?? { killSwitchActive: true, liveAuthorized: false };
-  const reconciliation = overview.reconciliation ?? { severeMismatchOpen: false };
 
-  const systemStatus = safety.killSwitchActive ? 'EMERGENCY' : reconciliation.severeMismatchOpen ? 'DEGRADED' : 'HEALTHY';
-  const tradingMode = safety.liveAuthorized ? 'LIVE' : 'PAPER';
-  const staleData = latestTimestamp(overview.audits ?? []) !== undefined &&
-    Date.now() - latestTimestamp(overview.audits ?? [])! > 300_000;
-
-  const pnlPositive = portfolio.dailyPnl >= 0;
-  const pnlPrefix = pnlPositive ? '+' : '';
+  const mode = safety.killSwitchActive ? 'EMERGENCY' : safety.liveAuthorized ? 'LIVE' : 'PAPER';
+  const modeColor = mode === 'EMERGENCY' ? 'var(--red)' : mode === 'LIVE' ? 'var(--green)' : 'var(--blue)';
+  const pnlPos = portfolio.dailyPnl >= 0;
 
   return (
-    <div className={styles.container}>
+    <div style={{ display: 'grid', gap: 18, maxWidth: 1380 }}>
       {/* Hero stat bar */}
-      <div className={styles.heroBar}>
-        <div className={styles.heroStat}>
-          <span className={styles.heroLabel}>Portfolio Equity</span>
-          <span className={styles.heroValue}>${portfolio.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        <div className="statCard">
+          <div className="statLabel">Portfolio Equity</div>
+          <div className="statValue">${fmt(portfolio.equity)}</div>
+          <div className="statSub">{fmt(portfolio.cash)} cash · {portfolio.positions.length} positions</div>
         </div>
-        <div className={styles.heroStat}>
-          <span className={styles.heroLabel}>Daily P&amp;L</span>
-          <span className={`${styles.heroValue} ${pnlPositive ? styles.positive : styles.negative}`}>
-            {pnlPrefix}${Math.abs(portfolio.dailyPnl).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
+        <div className="statCard">
+          <div className="statLabel">Daily P&amp;L</div>
+          <div className={`statValue ${pnlPos ? 'positive' : 'negative'}`}>
+            {pnlPos ? '+' : '−'}${fmt(Math.abs(portfolio.dailyPnl))}
+          </div>
+          <div className="statSub">Max drawdown {(portfolio.maxDrawdown * 100).toFixed(2)}%</div>
         </div>
-        <div className={styles.heroStat}>
-          <span className={styles.heroLabel}>System Status</span>
-          <div className={styles.heroBadges}>
-            <span className={`${styles.heroBadge} ${systemStatus === 'HEALTHY' ? styles.healthy : systemStatus === 'DEGRADED' ? styles.degraded : styles.emergency}`}>
-              <span className={styles.heroDot} />
-              {systemStatus}
+        <div className="statCard">
+          <div className="statLabel">System Status</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <span className={`dot ${recon.severeMismatchOpen || safety.killSwitchActive ? 'red' : 'green'}`} />
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 700 }}>
+              {safety.killSwitchActive ? 'EMERGENCY' : recon.severeMismatchOpen ? 'DEGRADED' : 'HEALTHY'}
             </span>
           </div>
+          <div className="statSub">{overview.workers?.filter(w => w.status === 'ok').length ?? 0} workers online</div>
         </div>
-        <div className={styles.heroStat}>
-          <span className={styles.heroLabel}>Trading Mode</span>
-          <div className={styles.heroBadges}>
-            <span className={`${styles.heroBadge} ${tradingMode === 'LIVE' ? styles.live : styles.paper}`}>
-              {tradingMode}
-            </span>
-            <span className={`${styles.heroBadge} ${safety.killSwitchActive ? styles.engaged : styles.clear}`}>
-              {safety.killSwitchActive ? 'KILL' : 'CLEAR'}
-            </span>
+        <div className="statCard">
+          <div className="statLabel">Trading Mode</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <span className={`dot ${mode === 'EMERGENCY' ? 'red' : mode === 'LIVE' ? 'green' : 'blue'}`} />
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 700, color: modeColor }}>{mode}</span>
           </div>
+          <div className="statSub">{portfolio.openOrderCount} open orders</div>
         </div>
       </div>
 
-      {staleData && (
-        <Link href="/health" className={styles.staleBanner}>
-          ⚠ Scanner data may be stale — last activity over 5 minutes ago. Check System Health.
-        </Link>
-      )}
+      {/* Control strip */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {safety.killSwitchActive ? (
+          <button className="success" disabled={safetyPending} onClick={() => patchSafety({ killSwitch: { active: false, reason: 'operator cleared' } })}>
+            Reset Kill Switch
+          </button>
+        ) : (
+          <button disabled={safetyPending} onClick={() => patchSafety({ killSwitch: { active: true, reason: 'operator pause' } })}>
+            Pause Trading
+          </button>
+        )}
+        <button className="danger" disabled={safetyPending} onClick={() => setEmergencyModal(true)}>
+          Emergency Stop
+        </button>
+        <Link href="/configuration"><button>Risk Settings</button></Link>
+        <Link href="/health"><button>System Health</button></Link>
+      </div>
 
-      {/* Main Grid */}
-      <div className={styles.mainGrid}>
-        {/* Equity Curve */}
-        <div className={`${styles.panel} ${styles.equityCurve}`}>
-          <h2>Equity Curve</h2>
+      {/* Main panels row */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 18 }}>
+        {/* Equity curve */}
+        <div className="panel">
+          <div className="panelHeader">
+            <span className="panelTitle">Equity Curve</span>
+            {equityHistory.length > 0 && <span className="badge orange">{equityHistory.length} snapshots</span>}
+          </div>
           {equityHistory.length > 1 ? (
-            <div className={styles.chartContainer}>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={equityHistory}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e8e8e2" />
-                  <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#8a8a84' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#8a8a84' }} width={70} tickFormatter={(v) => `$${v.toLocaleString()}`} />
-                  <Tooltip formatter={(v: number) => [`$${v.toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Equity']} />
-                  <Line type="monotone" dataKey="equity" stroke="#ff6b35" strokeWidth={2} dot={false} />
-                </LineChart>
+            <div className="chartWrap">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={equityHistory}>
+                  <defs>
+                    <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#5a5a56' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#5a5a56' }} width={72} tickFormatter={(v) => `$${v.toLocaleString()}`} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ background: '#161614', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
+                    labelStyle={{ color: '#9a9a94' }}
+                    formatter={(v: number) => [`$${fmt(v)}`, 'Equity']}
+                  />
+                  <Area type="monotone" dataKey="equity" stroke="#f97316" strokeWidth={2} fill="url(#equityGrad)" dot={false} />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className={styles.emptyTimeline}>
-              <strong>No equity history yet</strong>
-              Waiting for first portfolio snapshot.
-            </div>
+            <EmptyState msg="No equity history yet — waiting for first portfolio snapshot" />
           )}
         </div>
 
-        {/* Opportunity Queue */}
-        <div className={`${styles.panel} ${styles.opportunityQueue}`}>
-          <h2>Opportunity Queue</h2>
-          {signals.length > 0 ? (
-            <div className={styles.tableContainer}>
-              <table className={styles.table}>
+        {/* Worker health */}
+        <div className="panel">
+          <div className="panelHeader">
+            <span className="panelTitle">Workers</span>
+          </div>
+          {overview.workers && overview.workers.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {overview.workers.map((w) => (
+                <div key={w.worker} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className={`dot ${w.status === 'ok' ? 'green' : 'red'}`} />
+                    <span style={{ fontSize: 12.5 }}>{w.worker.replace('-worker', '')}</span>
+                  </div>
+                  <span className={`badge ${w.status === 'ok' ? 'green' : 'red'}`}>{w.status === 'ok' ? 'ONLINE' : 'ERROR'}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState msg="No worker heartbeats yet" />
+          )}
+        </div>
+      </div>
+
+      {/* Open orders + recent signals */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+        {/* Open orders */}
+        <div className="panel">
+          <div className="panelHeader">
+            <span className="panelTitle">Open Orders</span>
+            {overview.orders?.length > 0 && <span className="badge blue">{overview.orders.length}</span>}
+          </div>
+          {overview.orders?.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="table">
                 <thead>
                   <tr>
                     <th>Market</th>
-                    <th>Score</th>
-                    <th>Conf.</th>
-                    <th>Status</th>
+                    <th>Side</th>
+                    <th>Price</th>
+                    <th>Qty</th>
+                    <th>State</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {signals.slice(0, 6).map((signal, i) => (
-                    <tr key={i}>
-                      <td><code>{signal.marketId.slice(0, 14)}…</code></td>
-                      <td>
-                        <span className={signal.opportunityScore > 0 ? styles.edgePositive : styles.edgeNeutral}>
-                          {(signal.opportunityScore * 100).toFixed(1)}%
-                        </span>
-                      </td>
-                      <td>{(signal.confidence * 100).toFixed(1)}%</td>
-                      <td>
-                        <span className={`${styles.badge} ${signal.riskApproved ? styles.approved : styles.pending}`}>
-                          {signal.riskApproved ? 'Ready' : 'Pending'}
-                        </span>
-                      </td>
+                  {overview.orders.slice(0, 8).map((o) => (
+                    <tr key={o.id}>
+                      <td><span className="mono muted">{o.marketId.slice(0, 12)}…</span></td>
+                      <td><span className={`badge ${o.side === 'yes' ? 'green' : 'amber'}`}>{o.side.toUpperCase()}</span></td>
+                      <td className="mono">{(o.limitPrice * 100).toFixed(1)}¢</td>
+                      <td className="mono">{o.quantity.toFixed(2)}</td>
+                      <td><span className="muted" style={{ fontSize: 11 }}>{o.state}</span></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <div className={styles.emptyTimeline}>
-              <strong>Waiting for scanner</strong>
-              Signals will appear here after the first scanner cycle completes.
-            </div>
+            <EmptyState msg="No open orders" />
           )}
-          <Link href="/opportunities" className={styles.linkButton}>View Full Queue →</Link>
         </div>
 
-        {/* Active Portfolio */}
-        <div className={`${styles.panel} ${styles.activePortfolio}`}>
-          <h2>Active Positions</h2>
-          {portfolio.positions && portfolio.positions.length > 0 ? (
-            <div className={styles.tableContainer}>
-              <table className={styles.table}>
+        {/* Recent signals */}
+        <div className="panel">
+          <div className="panelHeader">
+            <span className="panelTitle">Recent Signals</span>
+            {signals.length > 0 && <Link href="/opportunities" style={{ fontSize: 11, color: 'var(--accent)' }}>View all →</Link>}
+          </div>
+          {signals.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="table">
                 <thead>
-                  <tr><th>Market</th><th>Side</th><th>Qty</th><th>Value</th></tr>
+                  <tr>
+                    <th>Market</th>
+                    <th>Prob.</th>
+                    <th>Edge</th>
+                    <th>Result</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {portfolio.positions.slice(0, 6).map((pos, i) => (
+                  {signals.slice(0, 8).map((s, i) => (
                     <tr key={i}>
-                      <td><code>{pos.marketId?.slice(0, 14) ?? 'N/A'}…</code></td>
-                      <td><span className={`${styles.badge} ${pos.side === 'yes' ? styles.long : styles.short}`}>{pos.side?.toUpperCase()}</span></td>
-                      <td>{pos.quantity?.toFixed(2) ?? 0}</td>
-                      <td className={pos.marketValue >= 0 ? styles.edgePositive : styles.edgeNegative}>
-                        ${(pos.marketValue ?? 0).toFixed(2)}
+                      <td><span className="mono muted">{s.marketId.slice(0, 12)}…</span></td>
+                      <td className="mono">{(s.probability * 100).toFixed(1)}%</td>
+                      <td>
+                        <span className={s.opportunityScore > 0 ? 'positive' : 'muted'} style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>
+                          {s.opportunityScore > 0 ? '+' : ''}{(s.opportunityScore * 100).toFixed(1)}%
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${s.finalOutcome === 'trade' ? 'green' : 'amber'}`}>
+                          {s.finalOutcome === 'trade' ? 'TRADE' : 'SKIP'}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -257,133 +326,51 @@ export default function MissionControl() {
               </table>
             </div>
           ) : (
-            <div className={styles.emptyTimeline}>
-              <strong>No open positions</strong>
-              Positions appear here once trades are executed.
-            </div>
+            <EmptyState msg="Waiting for first scanner cycle" />
           )}
-          <Link href="/portfolio" className={styles.linkButton}>View Portfolio →</Link>
-        </div>
-
-        {/* Live Activity Feed */}
-        <div className={`${styles.panel} ${styles.activityFeed}`}>
-          <h2>Recent Decisions</h2>
-          {overview.audits && overview.audits.length > 0 ? (
-            <div className={styles.timeline}>
-              {overview.audits.slice(0, 6).map((audit, i) => {
-                const question = audit.scannerData?.question ?? audit.marketId;
-                const approved = audit.finalOutcome === 'trade' && audit.riskDecision?.approved;
-                const edge = audit.edgeCalculations?.penalizedEdge ?? audit.edgeCalculations?.edge;
-                return (
-                  <div key={i} className={styles.timelineItem}>
-                    <div className={styles.timelineBullet} />
-                    <div className={styles.timelineContent}>
-                      <div className={styles.timelineTime}>{new Date(audit.createdAt).toLocaleTimeString()}</div>
-                      <div className={styles.timelineEvent}>{truncate(question, 52)}</div>
-                      <div>
-                        <span className={`${styles.badge} ${approved ? styles.approved : styles.pending}`}>
-                          {approved ? 'TRADE' : 'SKIP'}
-                        </span>
-                        {typeof edge === 'number' && (
-                          <span className={edge > 0 ? styles.edgePositive : styles.edgeNeutral} style={{ fontSize: '11px', marginLeft: '6px' }}>
-                            edge {(edge * 100).toFixed(1)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className={styles.emptyTimeline}>
-              <strong>Waiting for first scanner cycle</strong>
-              Decisions will appear here as markets are evaluated.
-            </div>
-          )}
-          <Link href="/audit" className={styles.linkButton}>Full Audit Trail →</Link>
         </div>
       </div>
 
-      {/* Bottom Grid */}
-      <div className={styles.bottomGrid}>
-        <div className={`${styles.panel} ${styles.riskSummary}`}>
-          <h2>Risk Fortress</h2>
-          <div className={styles.gatesList}>
-            {!reconciliation.severeMismatchOpen && !safety.killSwitchActive ? (
-              <div className={styles.gate}>
-                <span className={styles.gateStatus}>✓</span>
-                <span>All safety gates clear</span>
-              </div>
-            ) : null}
-            {reconciliation.severeMismatchOpen && (
-              <div className={`${styles.gate} ${styles.failed}`}>
-                <span className={styles.gateStatus}>✗</span>
-                <span>Reconciliation gate blocked</span>
-              </div>
-            )}
-            {safety.killSwitchActive && (
-              <div className={`${styles.gate} ${styles.failed}`}>
-                <span className={styles.gateStatus}>✗</span>
-                <span>Kill switch engaged</span>
-              </div>
-            )}
-          </div>
-          <Link href="/configuration" className={styles.linkButton}>Configure Gates →</Link>
-        </div>
-
-        <div className={`${styles.panel} ${styles.reconciliationSummary}`}>
-          <h2>Reconciliation</h2>
-          <div className={`${styles.reconciliationStatus} ${reconciliation.severeMismatchOpen ? styles.warning : styles.healthy}`}>
-            {reconciliation.severeMismatchOpen ? '⚠ MISMATCH OPEN' : '✓ MATCHED'}
-          </div>
-          {reconciliation.incident && (
-            <div className={styles.incidentInfo}>
-              <p><strong>Issue:</strong> Venue and local state divergence</p>
-              <p><strong>Status:</strong> {reconciliation.incident.acknowledgedAt ? 'Acknowledged' : 'Pending Review'}</p>
+      {/* Emergency Stop modal */}
+      {emergencyModal && (
+        <div className="modalOverlay" onClick={() => setEmergencyModal(false)}>
+          <div className="modalBox" onClick={(e) => e.stopPropagation()}>
+            <div className="modalTitle" style={{ color: 'var(--red)' }}>Emergency Stop</div>
+            <div className="modalBody">
+              This will immediately engage the kill switch and halt all new orders.
+              In-flight orders will not be cancelled automatically — check open orders and cancel manually if needed.
             </div>
-          )}
-          <Link href="/reconciliation" className={styles.linkButton}>View Details →</Link>
-        </div>
-
-        <div className={`${styles.panel} ${styles.workerHealth}`}>
-          <h2>Worker Health</h2>
-          <div className={styles.workersList}>
-            {overview.workers && overview.workers.length > 0 ? (
-              overview.workers.slice(0, 5).map((worker) => (
-                <div key={worker.worker} className={`${styles.workerItem} ${worker.status === 'ok' ? styles.healthy : styles.error}`}>
-                  <span className={styles.workerDot} />
-                  <span>{worker.worker.replace('-worker', '')}</span>
-                </div>
-              ))
-            ) : (
-              <div className={styles.empty}>No worker heartbeats yet</div>
-            )}
+            <div className="modalActions">
+              <button onClick={() => setEmergencyModal(false)}>Cancel</button>
+              <button className="danger" onClick={async () => {
+                setEmergencyModal(false);
+                await patchSafety({ killSwitch: { active: true, reason: 'EMERGENCY_STOP' } });
+              }}>
+                Confirm Emergency Stop
+              </button>
+            </div>
           </div>
-          <Link href="/health" className={styles.linkButton}>Full Health Report →</Link>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function MissionControlSkeleton() {
+function EmptyState({ msg }: { msg: string }) {
+  return (
+    <div style={{ padding: '28px 0', textAlign: 'center', color: 'var(--text-3)', fontSize: 12 }}>
+      {msg}
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
   return (
     <div className="skeletonPage">
-      <div className="skeletonHeader" />
-      <div className="skeletonGrid"><div className="skeletonCard" /><div className="skeletonCard" /><div className="skeletonCard" /></div>
+      <div className="skeletonGrid"><div className="skeletonCard" /><div className="skeletonCard" /><div className="skeletonCard" /><div className="skeletonCard" /></div>
+      <div className="skeletonRow" style={{ height: 40 }} />
       <div className="skeletonWide" />
+      <div className="skeletonGrid"><div className="skeletonCard" /><div className="skeletonCard" /></div>
     </div>
   );
-}
-
-function latestTimestamp(audits: Array<{ createdAt?: string | Date }>): number | undefined {
-  const times = audits
-    .map((a) => a.createdAt ? new Date(a.createdAt).getTime() : Number.NaN)
-    .filter(Number.isFinite);
-  return times.length ? Math.max(...times) : undefined;
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
