@@ -56,14 +56,11 @@ if command -v pm2 &>/dev/null; then
   printf "    ${OK}  %-10s  ${DIM}%s${R}\n" "pm2" "$pm2_ver"
   pm2_ok=true
 else
-  printf "    ${FAIL}  %-10s  ${YL}installing…${R}\n" "pm2"
-  if npm install -g pm2 &>/dev/null; then
-    pm2_ver=$(pm2 --version 2>/dev/null)
-    printf "    ${OK}  %-10s  ${DIM}%s (just installed)${R}\n" "pm2" "$pm2_ver"
-    pm2_ok=true
-  else
-    printf "    ${FAIL}  %-10s  ${RED}install failed — run: npm i -g pm2${R}\n" "pm2"
-  fi
+  printf "    ${FAIL}  %-10s  ${RED}not found — run: npm install -g pm2${R}\n" "pm2"
+  printf "\n  ${RED}${B}pm2 is required. Open a new terminal and run:${R}\n"
+  printf "  ${YL}  npm install -g pm2${R}\n\n"
+  read -rp "  Press Enter to exit and install pm2 first…"
+  exit 1
 fi
 
 printf "\n"
