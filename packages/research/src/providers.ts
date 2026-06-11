@@ -37,6 +37,8 @@ export interface ResearchProviderConfig {
   RESEARCH_PROVIDERS_REQUIRED?: boolean;
   GROQ_API_KEY?: string;
   GROQ_MODEL?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
   OLLAMA_BASE_URL?: string;
   OLLAMA_MODEL?: string;
 }
@@ -204,12 +206,18 @@ export class AnthropicReasoningProvider implements LlmReasoningProvider {
   }
 }
 
-export class GroqReasoningProvider implements LlmReasoningProvider {
-  id = 'groq' as const;
-  constructor(private readonly apiKey: string, private readonly model = 'llama-3.3-70b-versatile') {}
+// Generic OpenAI-compatible chat completions provider — works with Groq, Gemini,
+// OpenRouter, or any endpoint that accepts /v1/chat/completions + Bearer auth.
+export class OpenAICompatibleReasoningProvider implements LlmReasoningProvider {
+  constructor(
+    readonly id: string,
+    private readonly baseUrl: string,
+    private readonly apiKey: string,
+    private readonly model: string
+  ) {}
 
   async reason(market: NormalizedMarket, facts: MarketDossier['currentFacts']): Promise<Partial<MarketDossier>> {
-    const payload = await requestJsonWithRetry('https://api.groq.com/openai/v1/chat/completions', {
+    const payload = await requestJsonWithRetry(`${this.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -221,15 +229,15 @@ export class GroqReasoningProvider implements LlmReasoningProvider {
           { role: 'user', content: JSON.stringify(reasoningInput(market, facts)) }
         ]
       }),
-      timeoutMs: 20_000
+      timeoutMs: 25_000
     });
     const text = (payload as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content;
-    if (!text) throw new Error('Groq response did not include message content');
+    if (!text) throw new Error(`${this.id} response did not include message content`);
     return parseReasoning(JSON.parse(text));
   }
 
   async probe(): Promise<void> {
-    await requestJsonWithRetry('https://api.groq.com/openai/v1/chat/completions', {
+    await requestJsonWithRetry(`${this.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -244,44 +252,65 @@ export class GroqReasoningProvider implements LlmReasoningProvider {
   }
 }
 
+// Cascade through providers in order — first success wins.
 export class TieredReasoningProvider implements LlmReasoningProvider {
   id = 'tiered' as const;
-  constructor(private readonly primary: LlmReasoningProvider, private readonly fallback: LlmReasoningProvider) {}
+  constructor(private readonly tiers: LlmReasoningProvider[]) {}
 
   async reason(market: NormalizedMarket, facts: MarketDossier['currentFacts']): Promise<Partial<MarketDossier>> {
-    try {
-      return await this.primary.reason(market, facts);
-    } catch {
-      return this.fallback.reason(market, facts);
+    let lastError: unknown;
+    for (const provider of this.tiers) {
+      try {
+        return await provider.reason(market, facts);
+      } catch (err) {
+        lastError = err;
+      }
     }
+    throw lastError instanceof Error ? lastError : new Error('all reasoning providers failed');
   }
 
   async probe(): Promise<void> {
-    try {
-      await this.primary.probe?.();
-    } catch {
-      await this.fallback.probe?.();
+    let lastError: unknown;
+    for (const provider of this.tiers) {
+      try {
+        await provider.probe?.();
+        return;
+      } catch (err) {
+        lastError = err;
+      }
     }
+    throw lastError instanceof Error ? lastError : new Error('all reasoning providers failed probe');
   }
 }
 
+const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
 export function configuredResearchProviders(config: ResearchProviderConfig): { webProvider?: WebResearchProvider; reasoningProvider?: LlmReasoningProvider } {
-  const ollamaProvider = config.OLLAMA_BASE_URL
-    ? new OllamaReasoningProvider(config.OLLAMA_BASE_URL, config.OLLAMA_MODEL)
-    : undefined;
+  // Build the tier list: Ollama → Groq → Gemini → OpenAI → Anthropic
+  const tiers: LlmReasoningProvider[] = [];
 
-  const cloudProvider = config.GROQ_API_KEY
-    ? new GroqReasoningProvider(config.GROQ_API_KEY, config.GROQ_MODEL)
-    : config.OPENAI_API_KEY
-      ? new OpenAIReasoningProvider(config.OPENAI_API_KEY)
-      : config.ANTHROPIC_API_KEY
-        ? new AnthropicReasoningProvider(config.ANTHROPIC_API_KEY)
-        : undefined;
+  if (config.OLLAMA_BASE_URL) {
+    tiers.push(new OllamaReasoningProvider(config.OLLAMA_BASE_URL, config.OLLAMA_MODEL));
+  }
+  if (config.GROQ_API_KEY) {
+    tiers.push(new OpenAICompatibleReasoningProvider('groq', GROQ_BASE_URL, config.GROQ_API_KEY, config.GROQ_MODEL ?? 'llama-3.3-70b-versatile'));
+  }
+  if (config.GEMINI_API_KEY) {
+    tiers.push(new OpenAICompatibleReasoningProvider('gemini', GEMINI_BASE_URL, config.GEMINI_API_KEY, config.GEMINI_MODEL ?? 'gemini-2.5-flash'));
+  }
+  if (config.OPENAI_API_KEY) {
+    tiers.push(new OpenAIReasoningProvider(config.OPENAI_API_KEY));
+  }
+  if (config.ANTHROPIC_API_KEY) {
+    tiers.push(new AnthropicReasoningProvider(config.ANTHROPIC_API_KEY));
+  }
 
-  // Ollama (local Gemma) is primary — always available. Groq/cloud is the high-reasoning fallback.
-  const reasoningProvider = ollamaProvider && cloudProvider
-    ? new TieredReasoningProvider(ollamaProvider, cloudProvider)
-    : ollamaProvider ?? cloudProvider;
+  const reasoningProvider = tiers.length === 0
+    ? undefined
+    : tiers.length === 1
+      ? tiers[0]
+      : new TieredReasoningProvider(tiers);
 
   return {
     webProvider: config.TAVILY_API_KEY ? new TavilyWebResearchProvider(config.TAVILY_API_KEY) : undefined,

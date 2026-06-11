@@ -33,6 +33,8 @@ const ConfigObjectSchema = z.object({
   RESEARCH_PROVIDERS_REQUIRED: z.coerce.boolean().default(false),
   GROQ_API_KEY: z.string().optional(),
   GROQ_MODEL: z.string().min(1).default('llama-3.3-70b-versatile'),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().min(1).default('gemini-2.5-flash'),
   OLLAMA_BASE_URL: z.string().url().optional(),
   OLLAMA_MODEL: z.string().min(1).default('gemma3:27b'),
   STRICT_RESOLUTION_MODE: z.coerce.boolean().default(true),
