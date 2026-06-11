@@ -1,6 +1,16 @@
+const e = process.env;
+
 const shared = {
   NODE_ENV: 'production',
   TRUST_OPERATOR_ROLE_HEADERS: 'true',
+  // Research providers — inherited from shell env (sourced from .env in XSPEC.command)
+  GROQ_API_KEY: e.GROQ_API_KEY ?? '',
+  GROQ_MODEL: e.GROQ_MODEL ?? 'llama-3.3-70b-versatile',
+  OLLAMA_BASE_URL: e.OLLAMA_BASE_URL ?? 'http://localhost:11434',
+  OLLAMA_MODEL: e.OLLAMA_MODEL ?? 'gemma3:27b',
+  OPENAI_API_KEY: e.OPENAI_API_KEY ?? '',
+  ANTHROPIC_API_KEY: e.ANTHROPIC_API_KEY ?? '',
+  TAVILY_API_KEY: e.TAVILY_API_KEY ?? '',
 };
 
 module.exports = {

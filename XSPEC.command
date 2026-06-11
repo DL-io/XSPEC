@@ -146,6 +146,31 @@ if [[ -n "$stale_pids" ]]; then
   printf "done\n\n"
 fi
 
+# ── start Ollama (local LLM — primary research provider) ─────────────────────
+if command -v ollama &>/dev/null; then
+  if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+    printf "    ${OK}  %-10s  ${DIM}running${R}\n" "ollama"
+  else
+    printf "    Starting ollama server…\n"
+    ollama serve >/tmp/ollama.log 2>&1 &
+    sleep 3
+    if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
+      printf "    ${OK}  %-10s  ${DIM}started${R}\n" "ollama"
+      # Pull gemma3:27b if not present (background — non-blocking)
+      ollama_model="${OLLAMA_MODEL:-gemma3:27b}"
+      if ! ollama list 2>/dev/null | grep -q "$ollama_model"; then
+        printf "    ${DIM}Pulling %s in background…${R}\n" "$ollama_model"
+        ollama pull "$ollama_model" >/tmp/ollama-pull.log 2>&1 &
+      fi
+    else
+      printf "    ${FAIL}  %-10s  ${RED}failed to start — Groq will be used instead${R}\n" "ollama"
+    fi
+  fi
+else
+  printf "    ${DIM}%-10s  not installed — install at https://ollama.ai${R}\n" "ollama"
+fi
+printf "\n"
+
 # ── run database migrations ───────────────────────────────────────────────────
 printf "  ${B}Database Migrations${R}\n\n"
 if pnpm db:migrate 2>&1 | sed 's/^/    /'; then

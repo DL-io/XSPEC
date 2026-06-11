@@ -35,6 +35,8 @@ export interface ResearchProviderConfig {
   ANTHROPIC_API_KEY?: string;
   TAVILY_API_KEY?: string;
   RESEARCH_PROVIDERS_REQUIRED?: boolean;
+  GROQ_API_KEY?: string;
+  GROQ_MODEL?: string;
   OLLAMA_BASE_URL?: string;
   OLLAMA_MODEL?: string;
 }
@@ -202,16 +204,88 @@ export class AnthropicReasoningProvider implements LlmReasoningProvider {
   }
 }
 
+export class GroqReasoningProvider implements LlmReasoningProvider {
+  id = 'groq' as const;
+  constructor(private readonly apiKey: string, private readonly model = 'llama-3.3-70b-versatile') {}
+
+  async reason(market: NormalizedMarket, facts: MarketDossier['currentFacts']): Promise<Partial<MarketDossier>> {
+    const payload = await requestJsonWithRetry('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: this.model,
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: providerSystemPrompt },
+          { role: 'user', content: JSON.stringify(reasoningInput(market, facts)) }
+        ]
+      }),
+      timeoutMs: 20_000
+    });
+    const text = (payload as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content;
+    if (!text) throw new Error('Groq response did not include message content');
+    return parseReasoning(JSON.parse(text));
+  }
+
+  async probe(): Promise<void> {
+    await requestJsonWithRetry('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: this.model,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: 'Return {"ok":true} as JSON.' }]
+      }),
+      timeoutMs: 8_000,
+      retries: 0
+    });
+  }
+}
+
+export class TieredReasoningProvider implements LlmReasoningProvider {
+  id = 'tiered' as const;
+  constructor(private readonly primary: LlmReasoningProvider, private readonly fallback: LlmReasoningProvider) {}
+
+  async reason(market: NormalizedMarket, facts: MarketDossier['currentFacts']): Promise<Partial<MarketDossier>> {
+    try {
+      return await this.primary.reason(market, facts);
+    } catch {
+      return this.fallback.reason(market, facts);
+    }
+  }
+
+  async probe(): Promise<void> {
+    try {
+      await this.primary.probe?.();
+    } catch {
+      await this.fallback.probe?.();
+    }
+  }
+}
+
 export function configuredResearchProviders(config: ResearchProviderConfig): { webProvider?: WebResearchProvider; reasoningProvider?: LlmReasoningProvider } {
+  const ollamaProvider = config.OLLAMA_BASE_URL
+    ? new OllamaReasoningProvider(config.OLLAMA_BASE_URL, config.OLLAMA_MODEL)
+    : undefined;
+
+  const cloudProvider = config.GROQ_API_KEY
+    ? new GroqReasoningProvider(config.GROQ_API_KEY, config.GROQ_MODEL)
+    : config.OPENAI_API_KEY
+      ? new OpenAIReasoningProvider(config.OPENAI_API_KEY)
+      : config.ANTHROPIC_API_KEY
+        ? new AnthropicReasoningProvider(config.ANTHROPIC_API_KEY)
+        : undefined;
+
+  // Ollama (local Gemma) is primary — always available. Groq/cloud is the high-reasoning fallback.
+  const reasoningProvider = ollamaProvider && cloudProvider
+    ? new TieredReasoningProvider(ollamaProvider, cloudProvider)
+    : ollamaProvider ?? cloudProvider;
+
   return {
     webProvider: config.TAVILY_API_KEY ? new TavilyWebResearchProvider(config.TAVILY_API_KEY) : undefined,
-    reasoningProvider: config.OLLAMA_BASE_URL
-      ? new OllamaReasoningProvider(config.OLLAMA_BASE_URL, config.OLLAMA_MODEL)
-      : config.OPENAI_API_KEY
-        ? new OpenAIReasoningProvider(config.OPENAI_API_KEY)
-        : config.ANTHROPIC_API_KEY
-          ? new AnthropicReasoningProvider(config.ANTHROPIC_API_KEY)
-          : undefined
+    reasoningProvider
   };
 }
 
