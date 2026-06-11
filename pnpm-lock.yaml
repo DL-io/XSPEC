@@ -11,12 +11,6 @@ importers:
       '@polymarket/clob-client-v2':
         specifier: ^1.0.6
         version: 1.0.6(typescript@5.9.3)(zod@3.25.76)
-      '@trpc/client':
-        specifier: ^11.0.0
-        version: 11.17.0(@trpc/server@11.17.0(typescript@5.9.3))(typescript@5.9.3)
-      '@trpc/server':
-        specifier: ^11.0.0
-        version: 11.17.0(typescript@5.9.3)
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -99,34 +93,83 @@ importers:
       '@polyshore/risk':
         specifier: workspace:*
         version: link:../../packages/risk
+      redis:
+        specifier: ^4.7.0
+        version: 4.7.1
 
-  packages/alerts: {}
+  packages/alerts:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/api: {}
+  packages/api:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
-  packages/audit: {}
+  packages/audit:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/auth: {}
+  packages/auth:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/config:
     dependencies:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
   packages/core: {}
 
   packages/db:
     dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
       '@polyshore/execution':
         specifier: workspace:*
         version: link:../execution
+      drizzle-orm:
+        specifier: ^0.36.0
+        version: 0.36.4(@types/react@19.2.15)(mysql2@3.22.4(@types/node@22.19.19))(react@19.2.6)
+      mysql2:
+        specifier: ^3.11.0
+        version: 3.22.4(@types/node@22.19.19)
 
-  packages/execution: {}
+  packages/execution:
+    dependencies:
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../config
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/features: {}
+  packages/features:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/models: {}
+  packages/models:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
   packages/observability:
     dependencies:
@@ -134,28 +177,100 @@ importers:
         specifier: ^4.7.0
         version: 4.7.1
 
-  packages/portfolio: {}
+  packages/portfolio:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/reconciliation: {}
+  packages/reconciliation:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/reports: {}
+  packages/reports:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/research: {}
+  packages/research:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
+      '@polyshore/scanner':
+        specifier: workspace:*
+        version: link:../scanner
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
-  packages/risk: {}
+  packages/risk:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/scanner: {}
+  packages/scanner:
+    dependencies:
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/simulations: {}
 
-  packages/venues: {}
+  packages/venues:
+    dependencies:
+      '@polymarket/clob-client-v2':
+        specifier: ^1.0.6
+        version: 1.0.6(typescript@5.9.3)(zod@3.25.76)
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../core
+      '@polyshore/scanner':
+        specifier: workspace:*
+        version: link:../scanner
+      viem:
+        specifier: ^2.52.2
+        version: 2.52.2(typescript@5.9.3)(zod@3.25.76)
 
-  workers/alert-worker: {}
+  workers/alert-worker:
+    dependencies:
+      '@polyshore/alerts':
+        specifier: workspace:*
+        version: link:../../packages/alerts
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
 
-  workers/calibration-worker: {}
+  workers/calibration-worker:
+    dependencies:
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@polyshore/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
 
   workers/execution-worker:
     dependencies:
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@polyshore/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -165,15 +280,24 @@ importers:
       '@polyshore/execution':
         specifier: workspace:*
         version: link:../../packages/execution
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@polyshore/venues':
         specifier: workspace:*
         version: link:../../packages/venues
 
   workers/reconciliation-worker:
     dependencies:
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@polyshore/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@polyshore/reconciliation':
         specifier: workspace:*
         version: link:../../packages/reconciliation
@@ -181,13 +305,32 @@ importers:
         specifier: workspace:*
         version: link:../../packages/venues
 
-  workers/research-worker: {}
+  workers/research-worker:
+    dependencies:
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@polyshore/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
+      '@polyshore/reports':
+        specifier: workspace:*
+        version: link:../../packages/reports
+      '@polyshore/research':
+        specifier: workspace:*
+        version: link:../../packages/research
 
   workers/scanner-worker:
     dependencies:
       '@polyshore/audit':
         specifier: workspace:*
         version: link:../../packages/audit
+      '@polyshore/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@polyshore/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -200,6 +343,9 @@ importers:
       '@polyshore/models':
         specifier: workspace:*
         version: link:../../packages/models
+      '@polyshore/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@polyshore/portfolio':
         specifier: workspace:*
         version: link:../../packages/portfolio
@@ -209,6 +355,12 @@ importers:
       '@polyshore/risk':
         specifier: workspace:*
         version: link:../../packages/risk
+      '@polyshore/scanner':
+        specifier: workspace:*
+        version: link:../../packages/scanner
+      '@polyshore/venues':
+        specifier: workspace:*
+        version: link:../../packages/venues
 
 packages:
 
@@ -1264,19 +1416,6 @@ packages:
 
   '@tootallnate/quickjs-emscripten@0.23.0':
     resolution: {integrity: sha512-C5Mc6rdnsaJDjO3UpGW/CQTHtCKaYlScZTly4JIu97Jxo/odCiH0ITnDXSJPTOrEKk/ycSZ0AOgTmkDtkOsvIA==}
-
-  '@trpc/client@11.17.0':
-    resolution: {integrity: sha512-KpJBFrbKTDeVCFv/3ckL1XBBH5Yssn8hethI/rUy7GIpTj+VzjtPjykDqJpzobuVOz+d26cXCSu1t4I6MYI5Zg==}
-    hasBin: true
-    peerDependencies:
-      '@trpc/server': 11.17.0
-      typescript: '>=5.7.2'
-
-  '@trpc/server@11.17.0':
-    resolution: {integrity: sha512-jbAOUe0PpUTCYqziyu+8vYXZdDXPudZgnEhWCQ2NjKnVEjfE93RqHTt1oycZJv/HNf51YlRXfEEwSIAbb161rw==}
-    hasBin: true
-    peerDependencies:
-      typescript: '>=5.7.2'
 
   '@types/d3-array@3.2.2':
     resolution: {integrity: sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==}
@@ -3405,15 +3544,6 @@ snapshots:
       tslib: 2.8.1
 
   '@tootallnate/quickjs-emscripten@0.23.0': {}
-
-  '@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@5.9.3))(typescript@5.9.3)':
-    dependencies:
-      '@trpc/server': 11.17.0(typescript@5.9.3)
-      typescript: 5.9.3
-
-  '@trpc/server@11.17.0(typescript@5.9.3)':
-    dependencies:
-      typescript: 5.9.3
 
   '@types/d3-array@3.2.2': {}
 

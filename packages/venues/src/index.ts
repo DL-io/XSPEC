@@ -53,8 +53,9 @@ export class PolymarketConnector implements VenueConnector {
       if (tokenIds.yes) this.outcomeTokenIds.set(marketId, tokenIds);
       const resolutionCriteria = String(row.resolutionSource || row.rules || row.description || row.resolutionRule || '');
       const ambiguity = resolutionAmbiguityScore(resolutionCriteria);
-      const bestBid = Number(row.bestBid ?? row.best_bid ?? row.outcomePrices?.split(',')[0] ?? 0);
-      const bestAsk = Number(row.bestAsk ?? row.best_ask ?? row.outcomePrices?.split(',')[1] ?? 0);
+      const outcomePrices = typeof row.outcomePrices === 'string' ? row.outcomePrices.split(',') : [];
+      const bestBid = Number(row.bestBid ?? row.best_bid ?? outcomePrices[0] ?? 0);
+      const bestAsk = Number(row.bestAsk ?? row.best_ask ?? outcomePrices[1] ?? 0);
       const lastTrade = Number(row.lastTradePrice ?? row.last_trade_price ?? 0);
       const mid = bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : lastTrade > 0 ? lastTrade : 0;
       return {
