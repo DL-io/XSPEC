@@ -1,5 +1,5 @@
 import { loadConfig } from '@polyshore/config';
-import { createDb, DecisionAuditRepository, OrderRepository, PortfolioRepository, PositionRepository, ReconciliationIncidentRepository, SystemEventRepository } from '@polyshore/db';
+import { createDb, DecisionAuditRepository, OrderRepository, PortfolioRepository, PositionRepository, ReconciliationIncidentRepository, SystemEventRepository, WorkerHealthRepository } from '@polyshore/db';
 import { logInfo } from '@polyshore/observability';
 import { reconcile, reconciliationAuditStatus } from '@polyshore/reconciliation';
 import { KalshiConnector, PolymarketConnector } from '@polyshore/venues';
@@ -13,8 +13,11 @@ const orderRepository = new OrderRepository(db, tenantId);
 const incidentRepository = new ReconciliationIncidentRepository(db);
 const eventRepository = new SystemEventRepository(db);
 const auditRepository = new DecisionAuditRepository(db);
+const health = new WorkerHealthRepository(db);
 const connectors = [
-  new KalshiConnector(config.KALSHI_API_URL, config.KALSHI_KEY_ID, config.KALSHI_PRIVATE_KEY, tenantId),
+  ...(config.KALSHI_KEY_ID && config.KALSHI_PRIVATE_KEY
+    ? [new KalshiConnector(config.KALSHI_API_URL, config.KALSHI_KEY_ID, config.KALSHI_PRIVATE_KEY, tenantId)]
+    : []),
   new PolymarketConnector(config.POLYMARKET_GAMMA_URL, config.POLYMARKET_CLOB_URL, tenantId, {
     privateKey: config.POLYMARKET_PRIVATE_KEY,
     creds: config.POLYMARKET_API_KEY && config.POLYMARKET_SECRET && config.POLYMARKET_PASSPHRASE
@@ -74,23 +77,40 @@ async function reconcileOnce() {
 
   if (successfulVenues === 0) throw new Error('No venue reconciliation cycle completed successfully.');
   await portfolioRepository.markSevereMismatch(tenantId, severeMismatchOpen);
+  await health.heartbeat({ worker: 'reconciliation-worker', status: 'ok', lastHeartbeatAt: new Date(), lastSuccessAt: new Date(), metadata: { venues: successfulVenues, mismatches: totalMismatches } });
   logInfo('reconciliation cycle complete', { venues: successfulVenues, mismatches: totalMismatches, severeMismatchOpen });
 }
 
-try {
-  await reconcileOnce();
-} catch (error) {
-  const msg = error instanceof Error ? error.message : String(error);
-  if (config.OPERATING_MODE === 'paper') {
-    logInfo('reconciliation skipped in paper mode — venue credentials not required', { error: msg });
-  } else {
-    throw error;
-  }
-}
 if (process.env.WORKER_ONCE === 'true') {
+  try {
+    await reconcileOnce();
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (config.OPERATING_MODE === 'paper') logInfo('reconciliation skipped in paper mode — venue credentials not required', { error: msg });
+    else throw error;
+  }
   logInfo('reconciliation worker one-shot complete', { mode: config.OPERATING_MODE });
 } else {
-  setInterval(() => {
-    reconcileOnce().catch((error) => logInfo('reconciliation cycle failed', { error: error instanceof Error ? error.message : String(error) }));
-  }, config.RECONCILIATION_SECONDS * 1000);
+  await loop('reconciliation-worker', reconcileOnce);
+}
+
+async function loop(worker: string, run: () => Promise<void>) {
+  let backoffMs = 1_000;
+  for (;;) {
+    try {
+      await run();
+      backoffMs = 1_000;
+      await sleep(config.RECONCILIATION_SECONDS * 1000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await health.heartbeat({ worker, status: 'error', lastHeartbeatAt: new Date(), lastError: message });
+      logInfo(`${worker} cycle failed`, { error: message, backoffMs });
+      await sleep(backoffMs);
+      backoffMs = Math.min(backoffMs * 2, 60_000);
+    }
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

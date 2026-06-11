@@ -1,5 +1,5 @@
 import { loadConfig } from '@polyshore/config';
-import { CalibrationRecordRepository, ConfigOverrideRepository, createDb, MarketRepository, PerformanceRepository, PortfolioRepository } from '@polyshore/db';
+import { CalibrationRecordRepository, ConfigOverrideRepository, createDb, MarketRepository, PerformanceRepository, PortfolioRepository, WorkerHealthRepository } from '@polyshore/db';
 import { PolymarketConnector, KalshiConnector } from '@polyshore/venues';
 import { applyOrderbookSnapshot, evaluateScannerGates } from '@polyshore/scanner';
 import { logInfo } from '@polyshore/observability';
@@ -14,6 +14,7 @@ const portfolioRepository = new PortfolioRepository(db);
 const safetyRepository = new ConfigOverrideRepository(db);
 const performanceRepo = new PerformanceRepository(db);
 const calibrationRepo = new CalibrationRecordRepository(db);
+const health = new WorkerHealthRepository(db);
 const researchStages = createResearchStagesFromConfig(config);
 const connectors = [
   new PolymarketConnector(config.POLYMARKET_GAMMA_URL, config.POLYMARKET_CLOB_URL, 'system'),
@@ -24,11 +25,12 @@ const connectors = [
 
 async function scanOnce() {
   const safety = await safetyRepository.readSafetyState(tenantId);
-  // Fetch per-model performance history and calibration data once per cycle to avoid N queries per market
   const [modelPerformanceRecords, calibrationData] = await Promise.all([
     performanceRepo.getModelPerformanceRecords(tenantId, 200),
     calibrationRepo.getRecentResolved(50)
   ]);
+  let totalFetched = 0;
+  let totalAccepted = 0;
   for (const connector of connectors) {
     const markets = await connector.fetchMarkets();
     let accepted = 0;
@@ -46,14 +48,14 @@ async function scanOnce() {
         await evaluateMarketPipeline(db, market, {
           tenantId,
           mode: config.OPERATING_MODE,
-          mandateId: 'conservative',
+          mandateId: config.MANDATE_ID,
           portfolio,
           liveAuthorized: safety.liveAuthorized,
           killSwitchActive: safety.killSwitchActive,
-          dailyLossLimit: 500,
-          drawdownLimit: 0.1,
-          maxOpenOrders: 10,
-          maxParticipationRate: 0.1,
+          dailyLossLimit: config.DAILY_LOSS_LIMIT,
+          drawdownLimit: config.DRAWDOWN_LIMIT,
+          maxOpenOrders: config.MAX_OPEN_ORDERS,
+          maxParticipationRate: config.MAX_PARTICIPATION_RATE,
           severeAnomaly: false,
           capturedOrderbook: book,
           liveActivationConfirmedAt: safety.liveActivationConfirmedAt,
@@ -65,14 +67,36 @@ async function scanOnce() {
       accepted += 1;
     }
     logInfo('scanner cycle persisted', { venue: connector.id, fetched: markets.length, accepted });
+    totalFetched += markets.length;
+    totalAccepted += accepted;
+  }
+  await health.heartbeat({ worker: 'scanner-worker', status: 'ok', lastHeartbeatAt: new Date(), lastSuccessAt: new Date(), metadata: { fetched: totalFetched, accepted: totalAccepted } });
+}
+
+if (process.env.WORKER_ONCE === 'true') {
+  await scanOnce();
+  logInfo('scanner worker one-shot complete', { mode: config.OPERATING_MODE });
+} else {
+  await loop('scanner-worker', scanOnce);
+}
+
+async function loop(worker: string, run: () => Promise<void>) {
+  let backoffMs = 1_000;
+  for (;;) {
+    try {
+      await run();
+      backoffMs = 1_000;
+      await sleep(config.ACTIVE_MARKET_POLL_SECONDS * 1000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await health.heartbeat({ worker, status: 'error', lastHeartbeatAt: new Date(), lastError: message });
+      logInfo(`${worker} cycle failed`, { error: message, backoffMs });
+      await sleep(backoffMs);
+      backoffMs = Math.min(backoffMs * 2, 60_000);
+    }
   }
 }
 
-await scanOnce();
-if (process.env.WORKER_ONCE === 'true') {
-  logInfo('scanner worker one-shot complete', { mode: config.OPERATING_MODE });
-} else {
-  setInterval(() => {
-    scanOnce().catch((error) => logInfo('scanner cycle failed', { error: error instanceof Error ? error.message : String(error) }));
-  }, config.ACTIVE_MARKET_POLL_SECONDS * 1000);
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

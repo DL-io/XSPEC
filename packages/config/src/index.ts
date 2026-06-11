@@ -41,6 +41,11 @@ const ConfigObjectSchema = z.object({
   WATCHLIST_POLL_SECONDS: z.coerce.number().int().positive().default(5),
   ACTIVE_MARKET_POLL_SECONDS: z.coerce.number().int().positive().default(15),
   RECONCILIATION_SECONDS: z.coerce.number().int().positive().default(30),
+  MANDATE_ID: z.string().min(1).default('conservative'),
+  DAILY_LOSS_LIMIT: z.coerce.number().positive().default(500),
+  DRAWDOWN_LIMIT: z.coerce.number().positive().max(1).default(0.1),
+  MAX_OPEN_ORDERS: z.coerce.number().int().positive().default(10),
+  MAX_PARTICIPATION_RATE: z.coerce.number().positive().max(1).default(0.1),
   ALERT_WEBHOOK_URL: z.string().url().optional(),
   SMTP_URL: z.string().optional(),
   SMS_WEBHOOK_URL: z.string().url().optional()
