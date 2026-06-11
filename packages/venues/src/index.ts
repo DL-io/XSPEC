@@ -53,6 +53,10 @@ export class PolymarketConnector implements VenueConnector {
       if (tokenIds.yes) this.outcomeTokenIds.set(marketId, tokenIds);
       const resolutionCriteria = String(row.resolutionSource ?? row.rules ?? row.description ?? '');
       const ambiguity = resolutionAmbiguityScore(resolutionCriteria);
+      const bestBid = Number(row.bestBid ?? row.best_bid ?? row.outcomePrices?.split(',')[0] ?? 0);
+      const bestAsk = Number(row.bestAsk ?? row.best_ask ?? row.outcomePrices?.split(',')[1] ?? 0);
+      const lastTrade = Number(row.lastTradePrice ?? row.last_trade_price ?? 0);
+      const mid = bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : lastTrade > 0 ? lastTrade : 0;
       return {
         id: marketId,
         source: 'polymarket',
@@ -62,12 +66,12 @@ export class PolymarketConnector implements VenueConnector {
         resolutionCriteria,
         resolutionDate: new Date(String(row.endDate ?? row.end_date ?? Date.now())),
         status: 'active',
-        bestBid: 0,
-        bestAsk: 0,
-        spread: 0,
-        spreadBps: 0,
-        midpoint: 0,
-        lastTradePrice: Number(row.lastTradePrice ?? row.last_trade_price ?? 0),
+        bestBid,
+        bestAsk,
+        spread: Math.max(0, bestAsk - bestBid),
+        spreadBps: mid > 0 ? ((bestAsk - bestBid) / mid) * 10_000 : 0,
+        midpoint: mid,
+        lastTradePrice: lastTrade,
         bidDepth1Pct: 0,
         askDepth1Pct: 0,
         bidDepth5Pct: 0,
@@ -77,7 +81,7 @@ export class PolymarketConnector implements VenueConnector {
         volume7d: Number(row.volume1wk ?? row.volume7d ?? 0),
         openInterest: Number(row.openInterest ?? 0),
         tradeCount24h: Number(row.tradeCount24h ?? 0),
-        dataFreshnessMs: Number.POSITIVE_INFINITY,
+        dataFreshnessMs: 0,
         isLiquid: Number(row.liquidityNum ?? row.liquidity ?? 0) >= 500,
         hasAmbiguousResolution: ambiguity >= 0.4,
         resolutionAmbiguityScore: ambiguity,

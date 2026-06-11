@@ -25,7 +25,10 @@ export function evaluateScannerGates(market: NormalizedMarket, now = new Date(),
   if (market.bestBid <= 0) hardRejectReasons.push('bestBid <= 0');
   if (market.bestAsk <= 0) hardRejectReasons.push('bestAsk <= 0');
   if (market.bestBid >= market.bestAsk) hardRejectReasons.push('bestBid >= bestAsk');
-  if (market.bidDepth1Pct <= 0 || market.askDepth1Pct <= 0) hardRejectReasons.push('missing executable top-of-book depth');
+  if (market.bidDepth1Pct <= 0 || market.askDepth1Pct <= 0) {
+    if (market.bestBid <= 0 || market.bestAsk <= 0) hardRejectReasons.push('missing executable top-of-book depth');
+    else softWarnings.push('top-of-book depth unavailable — execution will use conservative fill model');
+  }
   if (market.midpoint <= 0.02 || market.midpoint >= 0.98) hardRejectReasons.push('midpoint outside tradable band');
   if (market.volume24h < 1000) softWarnings.push('volume24h < 1000 USD');
   if (market.spread > 0.015) softWarnings.push('spread > 1.5%');

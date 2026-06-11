@@ -12,7 +12,7 @@ describe('scanner gates', () => {
     expect(decision.accepted).toBe(false);
   });
 
-  it('rejects malformed polymarket token ids and missing executable depth', () => {
+  it('rejects malformed polymarket token ids', () => {
     const decision = evaluateScannerGates({
       id: 'polymarket:bad', source: 'polymarket', externalId: 'bad', slug: 'm', question: 'q', resolutionCriteria: 'Official objective criteria resolves this market.', resolutionDate: new Date(Date.now() + 86_400_000), status: 'active',
       bestBid: 0.4, bestAsk: 0.42, spread: 0.02, spreadBps: 500, midpoint: 0.41, lastTradePrice: 0.41,
@@ -20,6 +20,17 @@ describe('scanner gates', () => {
       openInterest: 0, tradeCount24h: 0, dataFreshnessMs: 1_000, isLiquid: true, hasAmbiguousResolution: false, resolutionAmbiguityScore: 0, category: 'x', tags: [], scannedAt: new Date()
     });
     expect(decision.hardRejectReasons).toContain('malformed Polymarket token id');
+    // depth is a soft warning when bestBid/bestAsk are present — venues don't return bulk depth
+    expect(decision.softWarnings).toContain('top-of-book depth unavailable — execution will use conservative fill model');
+  });
+
+  it('hard-rejects when both price and depth data are absent', () => {
+    const decision = evaluateScannerGates({
+      id: 'kalshi:m', source: 'kalshi', externalId: 'm', slug: 'm', question: 'q', resolutionCriteria: 'Official objective criteria resolves this market.', resolutionDate: new Date(Date.now() + 86_400_000), status: 'active',
+      bestBid: 0, bestAsk: 0, spread: 0, spreadBps: 0, midpoint: 0, lastTradePrice: 0,
+      bidDepth1Pct: 0, askDepth1Pct: 0, bidDepth5Pct: 0, askDepth5Pct: 0, totalLiquidity: 1000, volume24h: 1000, volume7d: 100,
+      openInterest: 0, tradeCount24h: 0, dataFreshnessMs: 1_000, isLiquid: true, hasAmbiguousResolution: false, resolutionAmbiguityScore: 0, category: 'x', tags: [], scannedAt: new Date()
+    });
     expect(decision.hardRejectReasons).toContain('missing executable top-of-book depth');
   });
 
