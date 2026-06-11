@@ -17,7 +17,9 @@ const calibrationRepo = new CalibrationRecordRepository(db);
 const researchStages = createResearchStagesFromConfig(config);
 const connectors = [
   new PolymarketConnector(config.POLYMARKET_GAMMA_URL, config.POLYMARKET_CLOB_URL, 'system'),
-  new KalshiConnector(config.KALSHI_API_URL, config.KALSHI_KEY_ID, config.KALSHI_PRIVATE_KEY, 'system')
+  ...(config.KALSHI_KEY_ID && config.KALSHI_PRIVATE_KEY
+    ? [new KalshiConnector(config.KALSHI_API_URL, config.KALSHI_KEY_ID, config.KALSHI_PRIVATE_KEY, 'system')]
+    : [])
 ];
 
 async function scanOnce() {
@@ -31,6 +33,9 @@ async function scanOnce() {
     const markets = await connector.fetchMarkets();
     let accepted = 0;
     for (const rawMarket of markets) {
+      // Pre-check on raw data before making expensive per-market orderbook call
+      const preCheck = evaluateScannerGates(rawMarket, new Date(), config.STRICT_RESOLUTION_MODE);
+      if (!preCheck.accepted) continue;
       const book = await connector.fetchOrderbook(rawMarket.id);
       const market = applyOrderbookSnapshot(rawMarket, book);
       const decision = evaluateScannerGates(market, new Date(), config.STRICT_RESOLUTION_MODE);
