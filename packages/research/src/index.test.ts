@@ -61,14 +61,18 @@ describe('research provider stages', () => {
     expect(configured.map((item) => item.status)).toEqual(['HEALTHY', 'HEALTHY']);
   });
 
-  it('prefers Ollama as the configured reasoning provider', () => {
-    const providers = configuredResearchProviders({
+  it('prefers Ollama as the first tier when multiple providers are configured', () => {
+    const multi = configuredResearchProviders({
       OLLAMA_BASE_URL: 'http://127.0.0.1:11434',
-      OLLAMA_MODEL: 'gpt-oss:120b',
+      OLLAMA_MODEL: 'gemma3:27b',
       OPENAI_API_KEY: 'openai-key'
     });
+    // Multiple providers → TieredReasoningProvider (Ollama is tier 1)
+    expect(multi.reasoningProvider?.id).toBe('tiered');
 
-    expect(providers.reasoningProvider?.id).toBe('ollama');
+    // Single Ollama only → direct OllamaReasoningProvider
+    const solo = configuredResearchProviders({ OLLAMA_BASE_URL: 'http://127.0.0.1:11434' });
+    expect(solo.reasoningProvider?.id).toBe('ollama');
   });
 
   it('validates Ollama reasoning JSON before returning dossier fields', async () => {
