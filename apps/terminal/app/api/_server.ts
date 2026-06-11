@@ -111,8 +111,8 @@ async function rateLimit(key: string, limitPerMinute: number): Promise<RateLimit
 async function getRedisClient(redisUrl: string): Promise<RedisClientType> {
   if (!redisClient) {
     redisClient = (async () => {
-      const client = createClient({ url: redisUrl });
-      client.on('error', () => undefined);
+      const client = createClient({ url: redisUrl, socket: { connectTimeout: 5_000 } });
+      client.on('error', () => { redisClient = undefined; });
       await client.connect();
       return client as RedisClientType;
     })();

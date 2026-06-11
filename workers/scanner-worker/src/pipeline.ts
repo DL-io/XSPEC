@@ -1,11 +1,11 @@
 import type { DecisionAudit, MandateId, NormalizedMarket, OperatingMode, OrderbookSnapshot, PortfolioState } from '@polyshore/core';
-import { assertCompleteDecisionAudit } from '../../../packages/audit/src/index.ts';
-import { DossierRepository, type OmegaDb, DecisionAuditRepository, MarketFeatureRepository, MarketMemoryRepository, OrderbookRepository, ProbabilityEstimateRepository, RiskEventRepository } from '../../../packages/db/src/index.ts';
-import { computeFeatureSnapshot } from '../../../packages/features/src/index.ts';
-import { buildEnsemble, computeCalibrationAdjustment, computeModelWeights, generateModelEstimates, type CalibrationDataPoint, type ModelPerformanceRecord } from '../../../packages/models/src/index.ts';
-import { proposeTrade } from '../../../packages/portfolio/src/index.ts';
-import { buildDossier, defaultResearchStages, type ResearchStage } from '../../../packages/research/src/index.ts';
-import { evaluateRisk } from '../../../packages/risk/src/index.ts';
+import { assertCompleteDecisionAudit } from '@polyshore/audit';
+import { DossierRepository, type OmegaDb, DecisionAuditRepository, MarketFeatureRepository, MarketMemoryRepository, OrderbookRepository, ProbabilityEstimateRepository, RiskEventRepository } from '@polyshore/db';
+import { computeFeatureSnapshot } from '@polyshore/features';
+import { buildEnsemble, computeCalibrationAdjustment, computeModelWeights, generateModelEstimates, type CalibrationDataPoint, type ModelPerformanceRecord } from '@polyshore/models';
+import { proposeTrade } from '@polyshore/portfolio';
+import { buildDossier, defaultResearchStages, type ResearchStage } from '@polyshore/research';
+import { evaluateRisk } from '@polyshore/risk';
 
 export interface PipelineConfig {
   tenantId: string;
