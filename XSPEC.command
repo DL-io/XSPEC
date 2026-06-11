@@ -146,6 +146,23 @@ if [[ -n "$stale_pids" ]]; then
   printf "done\n\n"
 fi
 
+# ── run database migrations ───────────────────────────────────────────────────
+printf "  ${B}Database Migrations${R}\n\n"
+if pnpm db:migrate 2>&1 | sed 's/^/    /'; then
+  printf "\n    ${OK}  Migrations up to date\n\n"
+else
+  printf "\n    ${FAIL}  Migration failed — check DATABASE_URL and network\n\n"
+  read -rp "  Press Enter to continue anyway or Ctrl+C to abort…"
+fi
+
+# ── bootstrap tenant + safety state ──────────────────────────────────────────
+printf "  ${B}Bootstrap${R}\n\n"
+if pnpm bootstrap 2>/dev/null; then
+  printf "\n"
+else
+  printf "    ${FAIL}  Bootstrap failed — check DATABASE_URL and run pnpm db:migrate\n\n"
+fi
+
 # ── start via pm2 ─────────────────────────────────────────────────────────────
 printf "  ${B}Starting XSPEC…${R}\n\n"
 "$PM2_BIN" delete all 2>/dev/null || true

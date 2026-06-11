@@ -96,7 +96,7 @@ export class TavilyWebResearchProvider implements WebResearchProvider {
 
 export class OpenAIReasoningProvider implements LlmReasoningProvider {
   id = 'openai' as const;
-  constructor(private readonly apiKey: string, private readonly model = 'gpt-4.1-mini') {}
+  constructor(private readonly apiKey: string, private readonly model = 'gpt-4o-mini') {}
 
   async reason(market: NormalizedMarket, facts: MarketDossier['currentFacts']): Promise<Partial<MarketDossier>> {
     const payload = await requestJsonWithRetry('https://api.openai.com/v1/responses', {
