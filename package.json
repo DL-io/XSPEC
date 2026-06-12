@@ -48,5 +48,18 @@
     "tsx": "^4.19.0",
     "typescript": "^5.5.0",
     "vitest": "^2.1.0"
-  }
+  },
+  "description": "Institutional-grade prediction market trading infrastructure for Polymarket and Kalshi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DL-io/XSPEC.git"
+  },
+  "keywords": [
+    "polymarket",
+    "kalshi",
+    "prediction-markets",
+    "trading",
+    "typescript"
+  ],
+  "license": "UNLICENSED"
 }
