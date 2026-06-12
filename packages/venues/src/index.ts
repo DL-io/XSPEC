@@ -372,16 +372,49 @@ export class KalshiConnector implements VenueConnector {
   }
 
   async placeOrder(order: NewOrder): Promise<VenueOrderResult> {
+    if (process.env.OPERATING_MODE === 'paper') {
+      throw new Error('KalshiConnector.placeOrder() called in paper mode — all orders must route through the paper execution engine');
+    }
     const url = `${this.apiUrl}/portfolio/orders`;
-    return getJson<VenueOrderResult>(url, { method: 'POST', headers: { 'content-type': 'application/json', ...this.authHeaders('POST', url) }, body: JSON.stringify(order) });
+    const body = {
+      ticker: order.marketId.replace(/^kalshi:/, ''),
+      action: 'buy',
+      side: order.side === 'yes' ? 'yes' : 'no',
+      type: 'limit',
+      count: Math.round(order.quantity),
+      yes_price: order.side === 'yes' ? Math.round(order.limitPrice * 100) : undefined,
+      no_price: order.side === 'no' ? Math.round(order.limitPrice * 100) : undefined,
+      client_order_id: order.clientOrderId
+    };
+    const raw = await getJson<Record<string, unknown>>(url, { method: 'POST', headers: { 'content-type': 'application/json', ...this.authHeaders('POST', url) }, body: JSON.stringify(body) });
+    const kalshiOrder = (raw.order ?? raw) as Record<string, unknown>;
+    return {
+      venueOrderId: String(kalshiOrder.order_id ?? kalshiOrder.id ?? ''),
+      clientOrderId: order.clientOrderId,
+      state: mapKalshiOrderStatus(String(kalshiOrder.status ?? '')),
+      filledQuantity: Number(kalshiOrder.filled_count ?? 0),
+      averagePrice: kalshiOrder.avg_price ? Number(kalshiOrder.avg_price) / 100 : undefined,
+      raw
+    };
   }
   async cancelOrder(orderId: string): Promise<VenueCancelResult> {
     const url = `${this.apiUrl}/portfolio/orders/${encodeURIComponent(orderId)}`;
-    return getJson<VenueCancelResult>(url, { method: 'DELETE', headers: this.authHeaders('DELETE', url) });
+    const raw = await getJson<Record<string, unknown>>(url, { method: 'DELETE', headers: this.authHeaders('DELETE', url) });
+    return { venueOrderId: orderId, confirmed: true, raw };
   }
   async fetchPositions(): Promise<Position[]> {
     const url = `${this.apiUrl}/portfolio/positions`;
-    return getJson<Position[]>(url, { headers: this.authHeaders('GET', url) });
+    const payload = await getJson<{ market_positions?: Array<Record<string, unknown>> }>(url, { headers: this.authHeaders('GET', url) });
+    return (payload.market_positions ?? []).map((p) => ({
+      id: `kalshi:${String(p.market_id ?? p.ticker ?? '')}`,
+      marketId: `kalshi:${String(p.market_id ?? p.ticker ?? '')}`,
+      side: Number(p.position ?? 0) >= 0 ? ('yes' as const) : ('no' as const),
+      quantity: Math.abs(Number(p.position ?? 0)),
+      averagePrice: Number(p.market_exposure ?? 0) > 0 ? Number(p.market_exposure ?? 0) / Math.max(1, Math.abs(Number(p.position ?? 0))) / 100 : 0,
+      marketValue: Math.abs(Number(p.market_exposure ?? 0)) / 100,
+      category: String(p.category ?? 'uncategorized'),
+      venue: this.id
+    }));
   }
   async fetchPortfolio(): Promise<PortfolioState> {
     const balanceUrl = `${this.apiUrl}/portfolio/balance`;
@@ -411,6 +444,15 @@ export class KalshiConnector implements VenueConnector {
     const url = `${this.apiUrl}/portfolio/orders/${encodeURIComponent(orderId)}`;
     return getJson<VenueOrderResult | null>(url, { headers: this.authHeaders('GET', url) });
   }
+}
+
+function mapKalshiOrderStatus(status: string): import('@polyshore/core').OrderLifecycleState {
+  const s = status.toLowerCase();
+  if (/filled|executed/.test(s)) return 'FILLED';
+  if (/partial/.test(s)) return 'PARTIALLY_FILLED';
+  if (/cancel|void/.test(s)) return 'CANCEL_CONFIRMED';
+  if (/reject|fail/.test(s)) return 'REJECTED';
+  return 'ACCEPTED_BY_CLOB';
 }
 
 export function signKalshiRequest(privateKeyPem: string, timestamp: string, method: string, path: string): string {

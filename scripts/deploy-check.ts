@@ -85,10 +85,10 @@ async function main() {
   }
 
   // ─── Risk fortress ──────────────────────────────────────────────────────────
-  if (RISK_GATE_ORDER.length === 16) {
-    ok('risk:gates', '16 gates registered');
+  if (RISK_GATE_ORDER.length === 19) {
+    ok('risk:gates', '19 gates registered');
   } else {
-    fail('risk:gates', `expected 16 gates, got ${RISK_GATE_ORDER.length}`);
+    fail('risk:gates', `expected 19 gates, got ${RISK_GATE_ORDER.length}`);
   }
 
   // ─── Worker scripts ─────────────────────────────────────────────────────────

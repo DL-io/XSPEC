@@ -1,5 +1,5 @@
 import { createPrivateKey } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadDotenv } from 'dotenv';
 import { z } from 'zod';
@@ -24,9 +24,12 @@ const ConfigObjectSchema = z.object({
   POLYMARKET_CHAIN_ID: z.coerce.number().int().default(137),
   LIVE_TRADING_ENABLED: z.coerce.boolean().default(false),
   KILLSWITCH_ARMED: z.coerce.boolean().default(false),
-  KALSHI_API_URL: z.string().url().default('https://api.elections.kalshi.com/trade-api/v2'),
+  KALSHI_API_URL: z.string().url().default('https://trading-api.kalshi.com/trade-api/v2'),
+  KALSHI_API_BASE_URL: z.string().url().optional(),
   KALSHI_KEY_ID: z.string().optional(),
   KALSHI_PRIVATE_KEY: z.string().optional(),
+  KALSHI_PRIVATE_KEY_PEM: z.string().optional(),
+  KALSHI_PRIVATE_KEY_PATH: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   TAVILY_API_KEY: z.string().optional(),
@@ -41,7 +44,9 @@ const ConfigObjectSchema = z.object({
   WATCHLIST_POLL_SECONDS: z.coerce.number().int().positive().default(5),
   ACTIVE_MARKET_POLL_SECONDS: z.coerce.number().int().positive().default(15),
   RECONCILIATION_SECONDS: z.coerce.number().int().positive().default(30),
-  MANDATE_ID: z.enum(['ultra_conservative', 'conservative', 'balanced', 'aggressive']).default('conservative'),
+  MANDATE_ID: z.enum(['ultra_conservative', 'conservative', 'balanced', 'aggressive', 'micro']).default('conservative'),
+  ACTIVE_MANDATE: z.enum(['ultra_conservative', 'conservative', 'balanced', 'aggressive', 'micro']).optional(),
+  ACTIVE_VENUES: z.string().default('kalshi,polymarket'),
   DAILY_LOSS_LIMIT: z.coerce.number().positive().default(500),
   DRAWDOWN_LIMIT: z.coerce.number().positive().max(1).default(0.1),
   MAX_OPEN_ORDERS: z.coerce.number().int().positive().default(10),
@@ -53,14 +58,16 @@ const ConfigObjectSchema = z.object({
 });
 
 export const ConfigSchema = ConfigObjectSchema.superRefine((value, ctx) => {
-  if ((value.KALSHI_KEY_ID && !value.KALSHI_PRIVATE_KEY) || (!value.KALSHI_KEY_ID && value.KALSHI_PRIVATE_KEY)) {
+  const kalshiKey = value.KALSHI_PRIVATE_KEY ?? value.KALSHI_PRIVATE_KEY_PEM;
+  const hasKeyMaterial = Boolean(kalshiKey || value.KALSHI_PRIVATE_KEY_PATH);
+  if ((value.KALSHI_KEY_ID && !hasKeyMaterial) || (!value.KALSHI_KEY_ID && hasKeyMaterial)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['KALSHI_KEY_ID'],
-      message: 'Kalshi credentials require both KALSHI_KEY_ID and KALSHI_PRIVATE_KEY'
+      message: 'Kalshi credentials require both KALSHI_KEY_ID and key material (KALSHI_PRIVATE_KEY, KALSHI_PRIVATE_KEY_PEM, or KALSHI_PRIVATE_KEY_PATH)'
     });
   }
-  if (value.KALSHI_PRIVATE_KEY && !isValidPrivateKey(value.KALSHI_PRIVATE_KEY)) {
+  if (kalshiKey && !isValidPrivateKey(kalshiKey)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['KALSHI_PRIVATE_KEY'],
@@ -194,6 +201,23 @@ export interface AuditedConfigChange {
   oldValue: unknown;
   newValue: unknown;
   changedAt: Date;
+}
+
+export function resolveKalshiKey(config: RuntimeConfig): string | undefined {
+  if (config.KALSHI_PRIVATE_KEY) return config.KALSHI_PRIVATE_KEY;
+  if (config.KALSHI_PRIVATE_KEY_PEM) return config.KALSHI_PRIVATE_KEY_PEM;
+  if (config.KALSHI_PRIVATE_KEY_PATH) {
+    try { return readFileSync(config.KALSHI_PRIVATE_KEY_PATH, 'utf-8').trim(); } catch { return undefined; }
+  }
+  return undefined;
+}
+
+export function getKalshiApiUrl(config: RuntimeConfig): string {
+  return config.KALSHI_API_BASE_URL ?? config.KALSHI_API_URL;
+}
+
+export function getEffectiveMandateId(config: RuntimeConfig): RuntimeConfig['MANDATE_ID'] {
+  return config.ACTIVE_MANDATE ?? config.MANDATE_ID;
 }
 
 export function mergeRuntimeConfig<T extends Record<string, unknown>>(

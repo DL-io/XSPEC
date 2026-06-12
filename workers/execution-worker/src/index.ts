@@ -1,15 +1,17 @@
-import { loadConfig } from '@polyshore/config';
+import { getEffectiveMandateId, getKalshiApiUrl, loadConfig, resolveKalshiKey } from '@polyshore/config';
 import { createDb, WorkerHealthRepository } from '@polyshore/db';
 import { logInfo } from '@polyshore/observability';
 import { KalshiConnector, PolymarketConnector } from '@polyshore/venues';
 import { processPendingApprovedAudits } from './processor';
+import { buildBannerStatus, printBanner } from './banner';
 
 const config = loadConfig();
 const tenantId = process.env.TENANT_ID ?? 'system';
 const db = createDb(config.DATABASE_URL);
 const health = new WorkerHealthRepository(db);
+const kalshiKey = resolveKalshiKey(config);
 const connectors = {
-  kalshi: new KalshiConnector(config.KALSHI_API_URL, config.KALSHI_KEY_ID, config.KALSHI_PRIVATE_KEY, tenantId),
+  kalshi: new KalshiConnector(getKalshiApiUrl(config), config.KALSHI_KEY_ID, kalshiKey, tenantId),
   polymarket: new PolymarketConnector(config.POLYMARKET_GAMMA_URL, config.POLYMARKET_CLOB_URL, tenantId, {
     privateKey: config.POLYMARKET_PRIVATE_KEY,
     creds: config.POLYMARKET_API_KEY && config.POLYMARKET_SECRET && config.POLYMARKET_PASSPHRASE
@@ -20,6 +22,9 @@ const connectors = {
     chainId: config.POLYMARKET_CHAIN_ID
   })
 };
+
+const bannerStatus = await buildBannerStatus(config);
+printBanner(bannerStatus);
 
 async function executeOnce() {
   const results = await processPendingApprovedAudits(db, { tenantId, mode: config.OPERATING_MODE, connectors, runtimeConfig: config });

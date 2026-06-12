@@ -7,8 +7,8 @@ import { liveReadiness, loadConfig, validateConfigFromEnvFile } from './index';
 
 describe('runtime config Kalshi credentials', () => {
   it('requires Kalshi key id and private key as a pair', () => {
-    expect(() => loadConfig(baseEnv({ KALSHI_KEY_ID: 'key-id' }))).toThrow(/both KALSHI_KEY_ID and KALSHI_PRIVATE_KEY/);
-    expect(() => loadConfig(baseEnv({ KALSHI_PRIVATE_KEY: privateKeyPem() }))).toThrow(/both KALSHI_KEY_ID and KALSHI_PRIVATE_KEY/);
+    expect(() => loadConfig(baseEnv({ KALSHI_KEY_ID: 'key-id' }))).toThrow(/KALSHI_KEY_ID/);
+    expect(() => loadConfig(baseEnv({ KALSHI_PRIVATE_KEY: privateKeyPem() }))).toThrow(/KALSHI_KEY_ID/);
   });
 
   it('rejects invalid Kalshi private keys clearly', () => {

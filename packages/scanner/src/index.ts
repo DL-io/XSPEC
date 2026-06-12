@@ -9,16 +9,28 @@ export function resolutionAmbiguityScore(text: string): number {
   return Math.min(1, matches * 0.18 + (text.length < 80 ? 0.15 : 0));
 }
 
-export function evaluateScannerGates(market: NormalizedMarket, now = new Date(), strictMode = true): ScannerDecision {
+export interface ScannerGateOptions {
+  minDurationHours?: number;
+  maxDurationHours?: number;
+  minLiquidity?: number;
+  activeVenues?: string[];
+}
+
+export function evaluateScannerGates(market: NormalizedMarket, now = new Date(), strictMode = true, options: ScannerGateOptions = {}): ScannerDecision {
   const hardRejectReasons: string[] = [];
   const softWarnings: string[] = [];
   const hoursToResolution = (market.resolutionDate.getTime() - now.getTime()) / 3_600_000;
+  const minDurationHours = options.minDurationHours ?? 2;
+  const maxDurationHours = options.maxDurationHours;
+  const minLiquidity = options.minLiquidity ?? 500;
+  if (options.activeVenues && options.activeVenues.length > 0 && !options.activeVenues.includes(market.source as string)) hardRejectReasons.push(`source ${market.source} not in active venues`);
   if (market.source === 'polymarket' && !isValidPolymarketTokenId(market.externalId)) hardRejectReasons.push('malformed Polymarket token id');
   if (!market.resolutionCriteria || market.resolutionCriteria.trim().length < 20) hardRejectReasons.push('missing resolution criteria');
   if (market.spread > 0.03) hardRejectReasons.push('spread > 3%');
-  if (market.totalLiquidity < 500) hardRejectReasons.push('totalLiquidity < 500 USD');
+  if (market.totalLiquidity < minLiquidity) hardRejectReasons.push(`totalLiquidity < ${minLiquidity} USD`);
   if (market.dataFreshnessMs > 30_000) hardRejectReasons.push('dataFreshnessMs > 30,000');
-  if (hoursToResolution < 2) hardRejectReasons.push('resolutionDate < now + 2 hours');
+  if (hoursToResolution < minDurationHours) hardRejectReasons.push(`resolutionDate < now + ${minDurationHours} hours`);
+  if (maxDurationHours !== undefined && hoursToResolution > maxDurationHours) hardRejectReasons.push(`resolutionDate > now + ${maxDurationHours} hours`);
   if (market.status !== 'active') hardRejectReasons.push('status != active');
   if (market.hasAmbiguousResolution && strictMode) hardRejectReasons.push('ambiguous resolution and strict mode enabled');
   if (market.volume24h < 200) hardRejectReasons.push('volume24h < 200 USD');

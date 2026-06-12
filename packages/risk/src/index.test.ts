@@ -19,14 +19,23 @@ function ctx(overrides: Partial<RiskContext> = {}): RiskContext {
 }
 
 describe('risk fortress', () => {
-  it('exposes exactly the canonical 16 gates in order', () => {
-    expect(RISK_GATE_ORDER).toEqual(['reconciliationGate','modeAuthorizationGate','killSwitchGate','dailyLossGate','drawdownBrakeGate','totalExposureGate','categoryExposureGate','singleMarketExposureGate','openOrderCountGate','minEdgeGate','minConfidenceGate','spreadGate','liquidityParticipationGate','deepAnomalyGate','orderSizeSanityGate','mandateSpecificGate']);
+  it('exposes exactly the canonical 19 gates in order', () => {
+    expect(RISK_GATE_ORDER).toEqual([
+      'reconciliationGate', 'modeAuthorizationGate', 'killSwitchGate',
+      'bankrollFloorGate', 'reserveFloorGate',
+      'dailyLossGate', 'drawdownBrakeGate',
+      'totalExposureGate', 'categoryExposureGate', 'singleMarketExposureGate', 'openOrderCountGate',
+      'minEdgeGate', 'minConfidenceGate', 'spreadGate', 'marketDurationGate', 'liquidityParticipationGate',
+      'deepAnomalyGate', 'orderSizeSanityGate', 'mandateSpecificGate'
+    ]);
   });
 
   it.each([
     ['reconciliationGate', ctx({ portfolio: { ...portfolio, severeMismatchOpen: true } })],
     ['modeAuthorizationGate', ctx({ mode: 'live' })],
     ['killSwitchGate', ctx({ killSwitchActive: true })],
+    ['bankrollFloorGate', ctx({ mandateId: 'micro', portfolio: { ...portfolio, cash: 14 } })],
+    ['reserveFloorGate', ctx({ mandateId: 'micro', portfolio: { ...portfolio, cash: 20, totalExposure: 15 } })],
     ['dailyLossGate', ctx({ portfolio: { ...portfolio, dailyPnl: -500 } })],
     ['drawdownBrakeGate', ctx({ portfolio: { ...portfolio, maxDrawdown: 0.1 } })],
     ['totalExposureGate', ctx({ portfolio: { ...portfolio, totalExposure: 2_000 }, proposal: { ...proposal, suggestedSize: 1000 } })],
@@ -36,11 +45,22 @@ describe('risk fortress', () => {
     ['minEdgeGate', ctx({ proposal: { ...proposal, penalizedEdge: 0.01 } })],
     ['minConfidenceGate', ctx({ proposal: { ...proposal, ensemble: { ...proposal.ensemble, ensembleConfidence: 0.1 } } })],
     ['spreadGate', ctx({ market: { ...market, spread: 0.031 } })],
+    ['marketDurationGate', ctx({ mandateId: 'micro', market: { ...market, resolutionDate: new Date(Date.now() + 2 * 3_600_000) } })],
     ['liquidityParticipationGate', ctx({ market: { ...market, totalLiquidity: 1_000 }, proposal: { ...proposal, suggestedSize: 200 } })],
     ['deepAnomalyGate', ctx({ severeAnomaly: true })],
     ['orderSizeSanityGate', ctx({ proposal: { ...proposal, suggestedSize: -1 } })],
     ['mandateSpecificGate', ctx({ market: { ...market, hasAmbiguousResolution: true } })]
   ])('blocks on %s', (gate, input) => {
     expect(evaluateRisk(input).blockedBy).toBe(gate);
+  });
+
+  it('dailyLossGate uses mandate dailyLossStop for micro', () => {
+    const microCtx = ctx({ mandateId: 'micro', portfolio: { ...portfolio, dailyPnl: -3 } });
+    expect(evaluateRisk(microCtx).blockedBy).toBe('dailyLossGate');
+  });
+
+  it('bankrollFloorGate passes when no floor defined (non-micro mandate)', () => {
+    const result = evaluateRisk(ctx({ portfolio: { ...portfolio, cash: 1 } }));
+    expect(result.blockedBy).not.toBe('bankrollFloorGate');
   });
 });

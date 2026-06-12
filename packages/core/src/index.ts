@@ -106,4 +106,4 @@ export interface MemoryMatch { marketId: string; question: string; resolutionCri
 export interface ResearchPack { id: string; tenantId: string; title: string; marketIds: string[]; html: string; createdAt: Date; }
 export interface AlertEvent { id: string; tenantId: string; severity: AlertSeverity; channel: 'in_app' | 'email' | 'webhook' | 'sms'; eventType: string; message: string; createdAt: Date; }
 export interface Playbook { id: string; tenantId: string; name: string; enabled: boolean; filters: Record<string, unknown>; mandate: MandateId; }
-export type MandateId = 'ultra_conservative' | 'conservative' | 'balanced' | 'aggressive';
+export type MandateId = 'ultra_conservative' | 'conservative' | 'balanced' | 'aggressive' | 'micro';

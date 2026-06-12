@@ -1,9 +1,10 @@
-import { loadConfig } from '@polyshore/config';
+import { getEffectiveMandateId, getKalshiApiUrl, loadConfig, resolveKalshiKey } from '@polyshore/config';
 import { CalibrationRecordRepository, ConfigOverrideRepository, createDb, MarketRepository, PerformanceRepository, PortfolioRepository, WorkerHealthRepository } from '@polyshore/db';
 import { PolymarketConnector, KalshiConnector } from '@polyshore/venues';
 import { applyOrderbookSnapshot, evaluateScannerGates } from '@polyshore/scanner';
 import { logInfo } from '@polyshore/observability';
 import { createResearchStagesFromConfig } from '@polyshore/research';
+import { MANDATES } from '@polyshore/risk';
 import { evaluateMarketPipeline } from './pipeline';
 
 const config = loadConfig();
@@ -16,12 +17,21 @@ const performanceRepo = new PerformanceRepository(db);
 const calibrationRepo = new CalibrationRecordRepository(db);
 const health = new WorkerHealthRepository(db);
 const researchStages = createResearchStagesFromConfig(config);
+const activeVenues = config.ACTIVE_VENUES.split(',').map((v) => v.trim().toLowerCase()).filter(Boolean);
+const kalshiKey = resolveKalshiKey(config);
 const connectors = [
-  new PolymarketConnector(config.POLYMARKET_GAMMA_URL, config.POLYMARKET_CLOB_URL, 'system'),
-  ...(config.KALSHI_KEY_ID && config.KALSHI_PRIVATE_KEY
-    ? [new KalshiConnector(config.KALSHI_API_URL, config.KALSHI_KEY_ID, config.KALSHI_PRIVATE_KEY, 'system')]
-    : [])
+  ...(activeVenues.includes('polymarket') ? [new PolymarketConnector(config.POLYMARKET_GAMMA_URL, config.POLYMARKET_CLOB_URL, tenantId)] : []),
+  ...(activeVenues.includes('kalshi') ? [new KalshiConnector(getKalshiApiUrl(config), config.KALSHI_KEY_ID, kalshiKey, tenantId)] : [])
 ];
+
+const effectiveMandateId = getEffectiveMandateId(config);
+const mandate = MANDATES[effectiveMandateId];
+const scannerOptions = {
+  minDurationHours: mandate.marketDurationMinHours ?? 2,
+  maxDurationHours: mandate.marketDurationMaxHours,
+  minLiquidity: mandate.minLiquidity ?? 500,
+  activeVenues
+};
 
 async function scanOnce() {
   const safety = await safetyRepository.readSafetyState(tenantId);
@@ -35,12 +45,11 @@ async function scanOnce() {
     const markets = await connector.fetchMarkets();
     let accepted = 0;
     for (const rawMarket of markets) {
-      // Pre-check on raw data before making expensive per-market orderbook call
-      const preCheck = evaluateScannerGates(rawMarket, new Date(), config.STRICT_RESOLUTION_MODE);
+      const preCheck = evaluateScannerGates(rawMarket, new Date(), config.STRICT_RESOLUTION_MODE, scannerOptions);
       if (!preCheck.accepted) continue;
       const book = await connector.fetchOrderbook(rawMarket.id);
       const market = applyOrderbookSnapshot(rawMarket, book);
-      const decision = evaluateScannerGates(market, new Date(), config.STRICT_RESOLUTION_MODE);
+      const decision = evaluateScannerGates(market, new Date(), config.STRICT_RESOLUTION_MODE, scannerOptions);
       if (!decision.accepted) continue;
       await marketRepository.upsertMarket(market);
       const portfolio = await portfolioRepository.latest(tenantId);
@@ -48,7 +57,7 @@ async function scanOnce() {
         await evaluateMarketPipeline(db, market, {
           tenantId,
           mode: config.OPERATING_MODE,
-          mandateId: config.MANDATE_ID,
+          mandateId: effectiveMandateId,
           portfolio,
           liveAuthorized: safety.liveAuthorized,
           killSwitchActive: safety.killSwitchActive,
