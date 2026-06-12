@@ -1,6 +1,7 @@
 import { SignalQuerySchema } from '@polyshore/api';
 import { DecisionAuditRepository } from '@polyshore/db';
 import { authError, getDb, requireApiAccess } from '../_server';
+import { DEMO_SIGNALS } from '../_demo';
 
 export async function GET(request: Request) {
   try {
@@ -8,6 +9,10 @@ export async function GET(request: Request) {
     const query = SignalQuerySchema.safeParse(Object.fromEntries(url.searchParams));
     if (!query.success) return Response.json({ error: 'invalid signal query', issues: query.error.issues }, { status: 400 });
     await requireApiAccess(request, { tenantId: query.data.tenantId, permission: 'read', apiScope: 'api:read' });
+    if (process.env.DEMO_MODE === 'true') {
+      const signals = DEMO_SIGNALS.filter((s) => query.data.minEdge === undefined || s.probability >= query.data.minEdge);
+      return Response.json({ signals });
+    }
     const audits = await new DecisionAuditRepository(getDb()).latestForTenant(query.data.tenantId);
     const signals = audits
       .filter((audit) => audit.ensembleOutput && audit.riskDecision)

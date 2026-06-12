@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import type { AlertEvent, ApiClient, CalibrationRecord, DecisionAudit, ExecutionAuditResult, FeatureSnapshot, MarketDossier, MemoryMatch, ModelEstimate, NewOrder, NormalizedMarket, OrderbookSnapshot, OrderLifecycleState, Playbook, PortfolioState, Position, ReconciliationAuditStatus, ResearchPack, RiskDecision, Tenant, UsageMetric, User } from '@polyshore/core';
 import type { LiveOrderStore } from '@polyshore/execution';
 import type { OmegaDb } from './client';
-import { apiClients, apiKeys, calibrationRecords, configOverrides, decisionAudits, dossiers, fills, marketFeatures, marketMemory, markets, normalizedOrderbooks, orders, orderStateTransitions, playbooks, portfolioSnapshots, positions, probabilityEstimates, reconciliationRuns, researchPacks, riskEvents, systemEvents, tenantUsers, tenants, usageMetrics, users } from './schema';
+import { apiClients, apiKeys, calibrationRecords, configOverrides, decisionAudits, dossiers, fills, inviteCodes, marketFeatures, marketMemory, markets, normalizedOrderbooks, orders, orderStateTransitions, playbooks, portfolioSnapshots, positions, probabilityEstimates, reconciliationRuns, researchPacks, riskEvents, systemEvents, tenantUsers, tenants, usageMetrics, users, waitlist } from './schema';
 
 export interface TenantUserRecord { id?: number; tenantId: string; userId: string; role: string; }
 export interface ApiKeyRecord { id: string; apiClientId: string; keyHash: string; createdAt: Date; }
@@ -956,6 +956,131 @@ export class WorkerHealthRepository {
     }
     return [...byWorker.values()].sort((a, b) => a.worker.localeCompare(b.worker));
   }
+}
+
+export interface InviteCodeRecord {
+  id: string;
+  code: string;
+  createdBy: string;
+  usedBy?: string | null;
+  usedAt?: Date | null;
+  expiresAt?: Date | null;
+  isActive: boolean;
+  createdAt: Date;
+}
+
+export interface WaitlistRecord {
+  id: string;
+  email: string;
+  name: string;
+  message: string;
+  contacted: boolean;
+  createdAt: Date;
+}
+
+export interface UserAdminRecord {
+  id: string;
+  email: string;
+  displayName: string;
+  status: string;
+  createdAt: Date;
+  role?: string;
+}
+
+export class InviteCodeRepository {
+  constructor(private readonly db: OmegaDb) {}
+
+  async create(createdBy: string): Promise<InviteCodeRecord> {
+    const id = crypto.randomUUID();
+    const code = generateInviteCode();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    await this.db.insert(inviteCodes).values({ id, code, createdBy, isActive: true, expiresAt, createdAt: now });
+    return { id, code, createdBy, isActive: true, expiresAt, createdAt: now };
+  }
+
+  async list(): Promise<InviteCodeRecord[]> {
+    const rows = await this.db.select().from(inviteCodes).orderBy(desc(inviteCodes.createdAt));
+    return rows.map((r) => ({
+      id: r.id,
+      code: r.code,
+      createdBy: r.createdBy,
+      usedBy: r.usedBy,
+      usedAt: r.usedAt,
+      expiresAt: r.expiresAt,
+      isActive: r.isActive,
+      createdAt: r.createdAt
+    }));
+  }
+
+  async redeem(code: string, userId: string): Promise<boolean> {
+    const rows = await this.db.select().from(inviteCodes).where(eq(inviteCodes.code, code)).limit(1);
+    const record = rows[0];
+    if (!record || !record.isActive || record.usedBy) return false;
+    if (record.expiresAt && record.expiresAt < new Date()) return false;
+    await this.db.update(inviteCodes).set({ usedBy: userId, usedAt: new Date(), isActive: false }).where(eq(inviteCodes.code, code));
+    return true;
+  }
+
+  async deactivate(id: string): Promise<void> {
+    await this.db.update(inviteCodes).set({ isActive: false }).where(eq(inviteCodes.id, id));
+  }
+}
+
+export class WaitlistRepository {
+  constructor(private readonly db: OmegaDb) {}
+
+  async create(input: { email: string; name: string; message: string }): Promise<WaitlistRecord> {
+    const id = crypto.randomUUID();
+    const now = new Date();
+    await this.db.insert(waitlist).values({ id, email: input.email, name: input.name, message: input.message, contacted: false, createdAt: now });
+    return { id, ...input, contacted: false, createdAt: now };
+  }
+
+  async list(): Promise<WaitlistRecord[]> {
+    const rows = await this.db.select().from(waitlist).orderBy(desc(waitlist.createdAt));
+    return rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      name: r.name,
+      message: r.message,
+      contacted: r.contacted,
+      createdAt: r.createdAt
+    }));
+  }
+
+  async markContacted(id: string): Promise<void> {
+    await this.db.update(waitlist).set({ contacted: true }).where(eq(waitlist.id, id));
+  }
+}
+
+export class UserAdminRepository {
+  constructor(private readonly db: OmegaDb) {}
+
+  async listAll(): Promise<UserAdminRecord[]> {
+    const rows = await this.db
+      .select({ id: users.id, email: users.email, displayName: users.displayName, status: users.status, createdAt: users.createdAt, role: tenantUsers.role })
+      .from(users)
+      .leftJoin(tenantUsers, eq(users.id, tenantUsers.userId))
+      .orderBy(desc(users.createdAt));
+    return rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      displayName: r.displayName,
+      status: r.status,
+      createdAt: r.createdAt,
+      role: r.role ?? undefined
+    }));
+  }
+
+  async setStatus(userId: string, status: 'active' | 'pending' | 'suspended'): Promise<void> {
+    await this.db.update(users).set({ status }).where(eq(users.id, userId));
+  }
+}
+
+function generateInviteCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
 function tokenizeText(text: string): string[] {

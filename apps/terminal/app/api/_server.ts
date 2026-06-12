@@ -49,6 +49,15 @@ export async function requireApiAccess(request: Request, input: { tenantId: stri
   return { actorId, role, tenantId: input.tenantId, rateLimit: rateLimitState };
 }
 
+export async function requireOwner(request: Request) {
+  enforceOriginPolicy(request);
+  if (!LOCAL_DEV_ROLE_HEADERS) throw new ApiAuthError('API key required', 401);
+  const role = roleFromHeader(request.headers.get('x-polyshore-role'));
+  if (role !== 'owner') throw new ApiAuthError('owner role required', 403);
+  const actorId = request.headers.get('x-operator-id') ?? 'owner';
+  return { actorId, role: 'owner' as const };
+}
+
 export class ApiAuthError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);

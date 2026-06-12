@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiFetch, tenantId } from '../api-client';
+import { apiFetch, tenantId } from '../../api-client';
 import styles from '../operator.module.css';
 
 type DecisionFilter = 'ALL' | 'APPROVE' | 'REJECT';

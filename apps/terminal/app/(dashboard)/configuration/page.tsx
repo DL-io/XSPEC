@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { MANDATES } from '@polyshore/risk';
-import { apiFetch, tenantId } from '../api-client';
+import { apiFetch, tenantId } from '../../api-client';
 
 interface SafetyState {
   killSwitchActive: boolean;

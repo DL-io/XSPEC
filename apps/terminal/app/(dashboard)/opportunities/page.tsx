@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch, tenantId } from '../api-client';
+import { apiFetch, tenantId } from '../../api-client';
 
 interface Signal {
   marketId: string;

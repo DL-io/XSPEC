@@ -12,6 +12,7 @@ export const users = mysqlTable('users', {
   id: varchar('id', { length: 64 }).primaryKey(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   displayName: varchar('display_name', { length: 255 }).notNull(),
+  status: varchar('status', { length: 32 }).notNull().default('active'),
   createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
@@ -272,3 +273,23 @@ export const configOverrides = mysqlTable('config_overrides', {
   oldValue: json('old_value'),
   changedAt: timestamp('changed_at').notNull().defaultNow()
 }, (table) => ({ tenantKeyChanged: index('config_overrides_tenant_key_changed_idx').on(table.tenantId, table.key, table.changedAt) }));
+
+export const inviteCodes = mysqlTable('invite_codes', {
+  id: varchar('id', { length: 128 }).primaryKey(),
+  code: varchar('code', { length: 64 }).notNull().unique(),
+  createdBy: varchar('created_by', { length: 64 }).notNull(),
+  usedBy: varchar('used_by', { length: 64 }),
+  usedAt: timestamp('used_at'),
+  expiresAt: timestamp('expires_at'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow()
+});
+
+export const waitlist = mysqlTable('waitlist', {
+  id: varchar('id', { length: 128 }).primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  message: text('message').notNull(),
+  contacted: boolean('contacted').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow()
+});

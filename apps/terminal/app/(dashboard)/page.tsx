@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { apiFetch, tenantId } from './api-client';
+import { apiFetch, tenantId } from '../api-client';
 
 interface OverviewData {
   safety: { killSwitchActive: boolean; killSwitchReason?: string; liveAuthorized: boolean };

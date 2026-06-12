@@ -1,6 +1,7 @@
 import { SafetyQuerySchema } from '@polyshore/api';
 import { ConfigOverrideRepository, DecisionAuditRepository, OrderRepository, PortfolioRepository, ReconciliationIncidentRepository, WorkerHealthRepository } from '@polyshore/db';
 import { authError, getDb, requireApiAccess } from '../_server';
+import { DEMO_OVERVIEW } from '../_demo';
 
 export async function GET(request: Request) {
   try {
@@ -8,6 +9,7 @@ export async function GET(request: Request) {
     const query = SafetyQuerySchema.safeParse(Object.fromEntries(url.searchParams));
     if (!query.success) return Response.json({ error: 'invalid overview query', issues: query.error.issues }, { status: 400 });
     await requireApiAccess(request, { tenantId: query.data.tenantId, permission: 'read', apiScope: 'api:read' });
+    if (process.env.DEMO_MODE === 'true') return Response.json(DEMO_OVERVIEW);
     const db = getDb();
     const portfolioRepository = new PortfolioRepository(db);
     const [safety, reconciliation, portfolio, portfolioHistory, audits, orders, workers] = await Promise.all([

@@ -48,7 +48,8 @@ const ConfigObjectSchema = z.object({
   MAX_PARTICIPATION_RATE: z.coerce.number().positive().max(1).default(0.1),
   ALERT_WEBHOOK_URL: z.string().url().optional(),
   SMTP_URL: z.string().optional(),
-  SMS_WEBHOOK_URL: z.string().url().optional()
+  SMS_WEBHOOK_URL: z.string().url().optional(),
+  DEMO_MODE: z.coerce.boolean().default(false)
 });
 
 export const ConfigSchema = ConfigObjectSchema.superRefine((value, ctx) => {

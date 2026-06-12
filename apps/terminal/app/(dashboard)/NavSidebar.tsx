@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { apiFetch, tenantId } from './api-client';
+import { apiFetch, tenantId } from '../api-client';
 
 interface NavData {
   equity: number | null;
@@ -36,6 +36,7 @@ const sections = [
     links: [
       { label: 'Health', href: '/health' },
       { label: 'Configuration', href: '/configuration' },
+      { label: 'Admin', href: '/admin' },
     ],
   },
 ];

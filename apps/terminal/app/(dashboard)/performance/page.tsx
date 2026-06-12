@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { apiFetch, tenantId } from '../api-client';
+import { apiFetch, tenantId } from '../../api-client';
 
 type DateRange = '7d' | '30d' | '90d' | 'all';
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { apiFetch, tenantId } from '../api-client';
+import { apiFetch, tenantId } from '../../api-client';
 import styles from './reconciliation.module.css';
 
 export default function ReconciliationCenter() {
